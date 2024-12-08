@@ -112,6 +112,7 @@ CREATE TABLE rides
 )
   COMMENT = 'ライド情報テーブル';
 ALTER TABLE rides ADD INDEX (chair_id, updated_at DESC);
+ALTER TABLE rides ADD INDEX (evaluation, chair_id);
 ALTER TABLE rides ADD INDEX (user_id, created_at DESC);
 
 DROP TABLE IF EXISTS ride_statuses;
@@ -127,6 +128,7 @@ CREATE TABLE ride_statuses
 )
   COMMENT = 'ライドステータスの変更履歴テーブル';
 ALTER TABLE ride_statuses ADD INDEX (ride_id, created_at DESC);
+ALTER TABLE ride_statuses ADD INDEX (ride_id, chair_sent_at);
 
 DROP TABLE IF EXISTS owners;
 CREATE TABLE owners
@@ -156,3 +158,19 @@ CREATE TABLE coupons
 )
   COMMENT 'クーポンテーブル';
 ALTER TABLE coupons ADD INDEX (used_by);
+
+CREATE VIEW incompleted_chairs AS
+SELECT c.id AS char_id
+FROM chairs c
+         JOIN (
+    SELECT r.chair_id
+    FROM rides r
+             LEFT JOIN (
+        SELECT ride_id,
+               CASE WHEN COUNT(chair_sent_at) = 6 THEN 1 ELSE 0 END AS completed
+        FROM ride_statuses
+        GROUP BY ride_id
+    ) rs ON r.id = rs.ride_id
+    GROUP BY r.chair_id
+    HAVING SUM(CASE WHEN rs.completed = 1 THEN 0 ELSE 1 END) > 0
+) incomplete_chairs ON c.id = incomplete_chairs.chair_id;
