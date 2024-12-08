@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"sync"
 
 	"github.com/felixge/fgprof"
 	_ "net/http/pprof"
@@ -21,7 +22,26 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-var db *sqlx.DB
+var (
+	db             *sqlx.DB
+	totalDistances sync.Map
+)
+
+func getTotalDistance(chairID string) int {
+	v, ok := totalDistances.Load(chairID)
+	if !ok {
+		return 0
+	}
+	return v.(int)
+}
+
+func addTotalDistance(chairID string, delta int) int {
+	v := getTotalDistance(chairID)
+	updated := v + delta
+	totalDistances.Store(chairID, updated)
+
+	return updated
+}
 
 func main() {
 	http.DefaultServeMux.Handle("/debug/fgprof", fgprof.Handler())
@@ -122,6 +142,7 @@ func setup() http.Handler {
 	}
 
 	go matchingAuto()
+	totalDistances = sync.Map{}
 
 	return mux
 }
@@ -179,10 +200,7 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	for _, latestLocation := range chairLocationMap {
-		if _, err := db.ExecContext(ctx, "UPDATE chair_locations SET total_distance = ? WHERE id = ?", latestLocation.TotalDistance, latestLocation.ID); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
+		addTotalDistance(latestLocation.ID, latestLocation.TotalDistance)
 	}
 
 	writeJSON(w, http.StatusOK, postInitializeResponse{Language: "go"})

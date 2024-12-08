@@ -203,11 +203,9 @@ func ownerGetChairs(w http.ResponseWriter, r *http.Request) {
        is_active,
        created_at,
        updated_at,
-       IFNULL(total_distance, 0) AS total_distance,
        total_distance_updated_at
 FROM chairs
        LEFT JOIN (SELECT chair_id,
-                         MAX(total_distance) AS total_distance,
                         MAX(created_at) AS total_distance_updated_at
                    FROM chair_locations
                    GROUP BY chair_id) distance_table ON distance_table.chair_id = chairs.id
@@ -225,7 +223,7 @@ WHERE owner_id = ?
 			Model:         chair.Model,
 			Active:        chair.IsActive,
 			RegisteredAt:  chair.CreatedAt.UnixMilli(),
-			TotalDistance: chair.TotalDistance,
+			TotalDistance: getTotalDistance(chair.ID),
 		}
 		if chair.TotalDistanceUpdatedAt.Valid {
 			t := chair.TotalDistanceUpdatedAt.Time.UnixMilli()

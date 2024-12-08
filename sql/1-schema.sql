@@ -45,7 +45,6 @@ CREATE TABLE chair_locations
   chair_id   VARCHAR(26) NOT NULL COMMENT '椅子ID',
   latitude   INTEGER     NOT NULL COMMENT '経度',
   longitude  INTEGER     NOT NULL COMMENT '緯度',
-  total_distance INTEGER NOT NULL DEFAULT 0 COMMENT '総移動距離',
   created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '登録日時',
   PRIMARY KEY (id)
 )
