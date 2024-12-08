@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -295,8 +296,27 @@ type executableGet interface {
 	GetContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
 }
 
+var (
+	rideStatusCache     = make(map[string]string)
+	rideStatusCacheLock sync.RWMutex
+)
+
+// ライドステータス更新時にキャッシュを更新
+func updateRideStatusCache(rideID, status string) {
+	rideStatusCacheLock.Lock()
+	defer rideStatusCacheLock.Unlock()
+	rideStatusCache[rideID] = status
+}
+
 func getLatestRideStatus(ctx context.Context, tx executableGet, rideID string) (string, error) {
 	status := ""
+	rideStatusCacheLock.RLock()
+	status, exists := rideStatusCache[rideID]
+	defer rideStatusCacheLock.RUnlock()
+	if exists {
+		return status, nil
+	}
+
 	if err := tx.GetContext(ctx, &status, `SELECT status FROM ride_statuses WHERE ride_id = ? ORDER BY created_at DESC LIMIT 1`, rideID); err != nil {
 		return "", err
 	}
@@ -419,6 +439,7 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	updateRideStatusCache(rideID, "MATCHING")
 
 	var rideCount int
 	if err := tx.GetContext(ctx, &rideCount, `SELECT COUNT(*) FROM rides WHERE user_id = ? `, user.ID); err != nil {
@@ -635,6 +656,7 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	updateRideStatusCache(rideID, "COMPLETED")
 
 	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE id = ?`, rideID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
