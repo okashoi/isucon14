@@ -292,6 +292,11 @@ func getLatestRideStatus(ctx context.Context, tx executableGet, rideID string) (
 }
 
 func getLatestRideStatuses(ctx context.Context, tx *sqlx.Tx, rideIDs []string) (map[string]string, error) {
+	// rideIDs が空の場合の早期リターン
+	if len(rideIDs) == 0 {
+		return make(map[string]string), nil
+	}
+
 	query := `
         SELECT ride_id, status
         FROM (
