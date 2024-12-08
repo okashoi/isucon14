@@ -259,7 +259,7 @@ func bulkInsertCoordinates(ctx context.Context, tx *sqlx.Tx, coordinates []*Coor
 	if len(coordinates) == 0 {
 		return nil
 	}
-
+	
 	// INSERT 文テンプレート
 	query := `
         INSERT INTO chair_locations (id, chair_id, latitude, longitude, created_at)
