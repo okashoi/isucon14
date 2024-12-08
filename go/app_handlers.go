@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -211,9 +212,21 @@ func appGetRides(w http.ResponseWriter, r *http.Request) {
 	}
 
 	items := []getAppRidesResponseItem{}
+	// ここで全ridesのIDをまとめて取得
+	rideIDs := make([]string, 0, len(rides))
 	for _, ride := range rides {
-		status, err := getLatestRideStatus(ctx, tx, ride.ID)
-		if err != nil {
+		rideIDs = append(rideIDs, ride.ID)
+	}
+
+	// 複数のライドステータスをまとめて取得
+	statusMap, err := getLatestRideStatuses(ctx, tx, rideIDs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	for _, ride := range rides {
+		status, err1 := statusMap[ride.ID]
+		if !err1 {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -283,20 +296,76 @@ type executableGet interface {
 	GetContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
 }
 
+var (
+	rideStatusCache     = make(map[string]string)
+	rideStatusCacheLock sync.RWMutex
+)
+
+// ライドステータス更新時にキャッシュを更新
+func updateRideStatusCache(rideID, status string) {
+	rideStatusCacheLock.Lock()
+	defer rideStatusCacheLock.Unlock()
+	rideStatusCache[rideID] = status
+}
+
 func getLatestRideStatus(ctx context.Context, tx executableGet, rideID string) (string, error) {
 	status := ""
+	rideStatusCacheLock.RLock()
+	status, exists := rideStatusCache[rideID]
+	defer rideStatusCacheLock.RUnlock()
+	if exists {
+		return status, nil
+	}
+
 	if err := tx.GetContext(ctx, &status, `SELECT status FROM ride_statuses WHERE ride_id = ? ORDER BY created_at DESC LIMIT 1`, rideID); err != nil {
 		return "", err
 	}
+	updateRideStatusCache(rideID, status)
 	return status, nil
 }
 
+// 最新の Ride ステータスを取得する
 func getLatestRideStatuses(ctx context.Context, tx *sqlx.Tx, rideIDs []string) (map[string]string, error) {
+	rideStatusCacheLock.Lock()
+	defer rideStatusCacheLock.Unlock()
 	// rideIDs が空の場合の早期リターン
 	if len(rideIDs) == 0 {
 		return make(map[string]string), nil
 	}
 
+	// キャッシュから取得
+	statuses := make(map[string]string)
+	missingRideIDs := []string{}
+
+	for _, rideID := range rideIDs {
+		if status, found := rideStatusCache[rideID]; found {
+			// キャッシュに存在する場合
+			statuses[rideID] = status
+		} else {
+			// キャッシュに存在しない場合
+			missingRideIDs = append(missingRideIDs, rideID)
+		}
+	}
+
+	// キャッシュにない rideID をデータベースから取得
+	if len(missingRideIDs) > 0 {
+		dbStatuses, err := fetchRideStatusesFromDB(ctx, tx, missingRideIDs)
+		if err != nil {
+			return nil, err
+		}
+
+		// 結果をキャッシュに保存
+		for rideID, status := range dbStatuses {
+			rideStatusCache[rideID] = status
+			statuses[rideID] = status
+		}
+	}
+
+	return statuses, nil
+}
+
+// データベースから Ride ステータスを取得
+func fetchRideStatusesFromDB(ctx context.Context, tx *sqlx.Tx, rideIDs []string) (map[string]string, error) {
 	query := `
         SELECT ride_id, status
         FROM (
@@ -334,7 +403,6 @@ func getLatestRideStatuses(ctx context.Context, tx *sqlx.Tx, rideIDs []string) (
 
 	return statuses, nil
 }
-
 func appPostRides(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	req := &appPostRidesRequest{}
@@ -484,6 +552,7 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	updateRideStatusCache(rideID, "MATCHING")
 
 	writeJSON(w, http.StatusAccepted, &appPostRidesResponse{
 		RideID: rideID,
@@ -677,6 +746,7 @@ func appPostRideEvaluatation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	updateRideStatusCache(rideID, "COMPLETED")
 
 	writeJSON(w, http.StatusOK, &appPostRideEvaluationResponse{
 		CompletedAt: ride.UpdatedAt.UnixMilli(),
@@ -948,14 +1018,21 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 		}
 
 		skip := false
+		// ここで全ridesのIDをまとめて取得
+		rideIDs := make([]string, 0, len(rides))
 		for _, ride := range rides {
-			// 過去にライドが存在し、かつ、それが完了していない場合はスキップ
-			status, err := getLatestRideStatus(ctx, tx, ride.ID)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, err)
-				return
-			}
-			if status != "COMPLETED" {
+			rideIDs = append(rideIDs, ride.ID)
+		}
+
+		// 複数のライドステータスをまとめて取得
+		statusMap, err := getLatestRideStatuses(ctx, tx, rideIDs)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		for _, ride := range rides {
+			if statusMap[ride.ID] != "COMPLETED" {
 				skip = true
 				break
 			}
