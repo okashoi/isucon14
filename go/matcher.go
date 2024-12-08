@@ -12,7 +12,9 @@ func matchingAuto() {
 	for {
 		select {
 		case <-t.C:
-			_ = matchingOne()
+			if err := matchingOne(); err != nil {
+				log.Println("matchingAuto() failed", err)
+			}
 		}
 	}
 }
@@ -20,7 +22,6 @@ func matchingAuto() {
 func matchingOne() error {
 	t := time.Now()
 
-	// MEMO: 一旦最も待たせているリクエストに適当な空いている椅子マッチさせる実装とする。おそらくもっといい方法があるはず…
 	ride := &Ride{}
 	if err := db.Get(ride, `SELECT * FROM rides WHERE chair_id IS NULL ORDER BY created_at LIMIT 1`); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -29,28 +30,17 @@ func matchingOne() error {
 		return err
 	}
 
-	matched := &Chair{}
-	empty := false
-	for i := 0; i < 10; i++ {
-		if err := db.Get(matched, "SELECT * FROM chairs INNER JOIN (SELECT id FROM chairs WHERE is_active = TRUE ORDER BY RAND() LIMIT 1) AS tmp ON chairs.id = tmp.id LIMIT 1"); err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				return nil
-			}
-			return err
+	var matchedChairId string
+	// マンハッタン距離が最も近い椅子
+	if err := db.Get(&matchedChairId, "SELECT l.chair_id FROM latest_chair_locations AS l WHERE l.chair_id IN (SELECT id FROM chairs WHERE is_active = 1 AND id NOT IN (SELECT chair_id FROM incompleted_chairs)) ORDER BY ABS(latest_latitude - ?) + ABS(latest_longitude - ?) LIMIT 1", ride.PickupLatitude, ride.PickupLongitude); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			log.Println("matchingOne() no chair found")
+			return nil
 		}
-
-		if err := db.Get(&empty, "SELECT COUNT(*) = 0 FROM (SELECT COUNT(chair_sent_at) = 6 AS completed FROM ride_statuses WHERE ride_id IN (SELECT id FROM rides WHERE chair_id = ?) GROUP BY ride_id) is_completed WHERE completed = FALSE", matched.ID); err != nil {
-			return err
-		}
-		if empty {
-			break
-		}
-	}
-	if !empty {
-		return nil
+		return err
 	}
 
-	if _, err := db.Exec("UPDATE rides SET chair_id = ? WHERE id = ?", matched.ID, ride.ID); err != nil {
+	if _, err := db.Exec("UPDATE rides SET chair_id = ? WHERE id = ? AND chair_id IS NULL", matchedChairId, ride.ID); err != nil {
 		return err
 	}
 

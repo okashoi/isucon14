@@ -37,6 +37,7 @@ CREATE TABLE chairs
   COMMENT = '椅子情報テーブル';
 ALTER TABLE chairs ADD INDEX (access_token);
 ALTER TABLE chairs ADD INDEX (owner_id);
+ALTER TABLE chairs ADD INDEX (is_active);
 
 DROP TABLE IF EXISTS chair_locations;
 CREATE TABLE chair_locations
@@ -51,6 +52,20 @@ CREATE TABLE chair_locations
   COMMENT = '椅子の現在位置情報テーブル';
 ALTER TABLE chair_locations ADD INDEX (chair_id, created_at DESC);
 ALTER TABLE chair_locations ADD INDEX (chair_id, created_at, latitude, longitude);
+
+DROP TABLE IF EXISTS latest_chair_locations;
+CREATE TABLE latest_chair_locations
+(
+    chair_id         VARCHAR(26) NOT NULL,
+    latest_latitude  INTEGER     NOT NULL,
+    latest_longitude INTEGER     NOT NULL,
+    PRIMARY KEY (chair_id),
+    INDEX (chair_id, latest_latitude, latest_longitude)
+);
+CREATE TRIGGER update_latest_chair_location
+    AFTER INSERT ON chair_locations
+    FOR EACH ROW
+    INSERT INTO latest_chair_locations (chair_id, latest_latitude, latest_longitude) VALUES (NEW.chair_id, NEW.latitude, NEW.longitude) ON DUPLICATE KEY UPDATE latest_latitude = NEW.latitude, latest_longitude = NEW.longitude;
 
 DROP TABLE IF EXISTS users;
 CREATE TABLE users
@@ -98,6 +113,7 @@ CREATE TABLE rides
 )
   COMMENT = 'ライド情報テーブル';
 ALTER TABLE rides ADD INDEX (chair_id, updated_at DESC);
+ALTER TABLE rides ADD INDEX (evaluation, chair_id);
 ALTER TABLE rides ADD INDEX (user_id, created_at DESC);
 
 DROP TABLE IF EXISTS ride_statuses;
@@ -113,6 +129,7 @@ CREATE TABLE ride_statuses
 )
   COMMENT = 'ライドステータスの変更履歴テーブル';
 ALTER TABLE ride_statuses ADD INDEX (ride_id, created_at DESC);
+ALTER TABLE ride_statuses ADD INDEX (ride_id, chair_sent_at);
 
 DROP TABLE IF EXISTS owners;
 CREATE TABLE owners
@@ -142,3 +159,20 @@ CREATE TABLE coupons
 )
   COMMENT 'クーポンテーブル';
 ALTER TABLE coupons ADD INDEX (used_by);
+
+DROP VIEW IF EXISTS incompleted_chairs;
+CREATE VIEW incompleted_chairs AS
+SELECT c.id AS chair_id
+FROM chairs c
+         JOIN (
+    SELECT r.chair_id
+    FROM rides r
+             LEFT JOIN (
+        SELECT ride_id,
+               CASE WHEN COUNT(chair_sent_at) = 6 THEN 1 ELSE 0 END AS completed
+        FROM ride_statuses
+        GROUP BY ride_id
+    ) rs ON r.id = rs.ride_id
+    GROUP BY r.chair_id
+    HAVING SUM(CASE WHEN rs.completed = 1 THEN 0 ELSE 1 END) > 0
+) incomplete_chairs ON c.id = incomplete_chairs.chair_id;
