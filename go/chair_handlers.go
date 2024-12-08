@@ -100,6 +100,7 @@ type chairPostCoordinateResponse struct {
 }
 
 func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
+	time.Sleep(100 * time.Millisecond)
 	ctx := r.Context()
 	req := &Coordinate{}
 	if err := bindJSON(r, req); err != nil {
