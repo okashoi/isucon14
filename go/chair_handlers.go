@@ -261,11 +261,9 @@ func bulkInsertCoordinates(ctx context.Context, tx *sqlx.Tx, coordinates []*Coor
         VALUES (:id, :chair_id, :latitude, :longitude, :created_at)`
 
 	// 各 CoordinateBF を NamedExec 用のマップに変換
-	for _, coord := range coordinates {
-		if _, err := tx.NamedExecContext(ctx, query, coord); err != nil {
-			log.Printf("Failed to insert location: %v", err)
-			return err
-		}
+	if _, err := tx.NamedExecContext(ctx, query, coordinates); err != nil {
+		log.Printf("Failed to insert location: %v", err)
+		return err
 	}
 
 	log.Printf("Inserted %d coordinates.", len(coordinates))
