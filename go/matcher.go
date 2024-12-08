@@ -27,7 +27,7 @@ func matchingAuto() {
 
 func matchingOldest() error {
 	ride := &Ride{}
-	if err := db.Get(ride, `SELECT * FROM rides WHERE chair_id IS NULL ORDER BY ABS(pickup_latitude - destination_latitude) + ABS(pickup_longitude - destination_longitude) DESC LIMIT 1`); err != nil {
+	if err := db.Get(ride, `SELECT * FROM rides WHERE chair_id IS NULL ORDER BY created_at LIMIT 1`); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
