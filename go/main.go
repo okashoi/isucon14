@@ -161,9 +161,11 @@ type Coordinate struct {
 }
 
 type CoordinateBF struct {
-	Latitude  int       `json:"latitude"`
-	Longitude int       `json:"longitude"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        string    `db:"id"`
+	ChairID   string    `db:"chair_id"`
+	Latitude  int       `db:"latitude"`
+	Longitude int       `db:"longitude"`
+	CreatedAt time.Time `db:"created_at"`
 }
 
 func bindJSON(r *http.Request, v interface{}) error {

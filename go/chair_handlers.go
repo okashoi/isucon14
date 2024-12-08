@@ -205,7 +205,10 @@ func chairPostCoordinateBF(w http.ResponseWriter, r *http.Request) {
 
 	// バッファにデータを追加（タイムスタンプ込み）
 	bufferLock.Lock()
+	chairLocationID := ulid.Make().String()
 	coordinateBuf = append(coordinateBuf, &CoordinateBF{
+		ID:        chairLocationID,
+		ChairID:   chair.ID,
 		Latitude:  req.Latitude,
 		Longitude: req.Longitude,
 		CreatedAt: latestTimestamp, // ここで作成時刻を保持
@@ -257,34 +260,31 @@ func bulkInsertCoordinates(ctx context.Context, tx *sqlx.Tx, coordinates []*Coor
 		return nil
 	}
 
-	// INSERT 文を構築
+	// INSERT 文テンプレート
 	query := `
         INSERT INTO chair_locations (id, chair_id, latitude, longitude, created_at)
-        VALUES `
-	values := []interface{}{}
-	for _, coord := range coordinates {
-		query += "(?, ?, ?, ?, ?),"
-		values = append(values, ulid.Make().String(), "chair_id_placeholder", coord.Latitude, coord.Longitude, coord.CreatedAt)
-	}
-	query = query[:len(query)-1] // 最後のカンマを削除
+        VALUES (:id, :chair_id, :latitude, :longitude, :created_at)`
 
-	// クエリを実行
-	_, err := tx.ExecContext(ctx, query, values...)
-	return err
+	// 各 CoordinateBF を NamedExec 用のマップに変換
+	for _, coord := range coordinates {
+		if _, err := tx.NamedExecContext(ctx, query, coord); err != nil {
+			log.Printf("Failed to insert location: %v", err)
+			return err
+		}
+	}
+
+	log.Printf("Inserted %d coordinates.", len(coordinates))
+	return nil
 }
 
 // 定期的にバッファ内のデータを処理
 func startBufferProcessor() {
 	ctx := context.Background()
 	t := time.NewTicker(100 * time.Millisecond)
-	log.Println("startBufferProcessor 1")
 	for {
-		log.Println("startBufferProcessor2")
 		select {
 		case <-t.C:
-			log.Println("startBufferProcessor3")
 			saveBufferedCoordinates(ctx)
-			log.Println("startBufferProcessor4")
 		}
 	}
 }
