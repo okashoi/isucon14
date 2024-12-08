@@ -112,19 +112,30 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	isFirst := false
 	location := &ChairLocation{}
 	if err := tx.GetContext(ctx, location, `SELECT * FROM chair_locations WHERE chair_id = ? ORDER BY created_at DESC LIMIT 1`, chair.ID); err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		isFirst = true
 	}
-	if !isFirst {
-		// 初回でなければ移動距離を計算して追加
-		delta := abs(req.Latitude-location.Latitude) + abs(req.Longitude-location.Longitude)
-		addTotalDistance(chair.ID, delta)
+
+	// 距離の更新
+	var totalDistance int
+	if err := tx.GetContext(ctx, &totalDistance, `SELECT total_distance FROM chair_total_distances WHERE chair_id = ?`, chair.ID); err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		if _, err := tx.ExecContext(ctx, "INSERT INTO chair_total_distances (chair_id, total_distance) VALUES (?, 0)", chair.ID); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+	} else {
+		if _, err := tx.ExecContext(ctx, `UPDATE chair_total_distances SET total_distance = ? WHERE chair_id = ?`, totalDistance, chair.ID); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
 	}
 
 	chairLocationID := ulid.Make().String()

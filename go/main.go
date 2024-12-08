@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
-	"sync"
 
 	"github.com/felixge/fgprof"
 	_ "net/http/pprof"
@@ -23,24 +22,8 @@ import (
 )
 
 var (
-	db             *sqlx.DB
-	totalDistances sync.Map
+	db *sqlx.DB
 )
-
-func getTotalDistance(chairID string) int {
-	v, ok := totalDistances.Load(chairID)
-	if !ok {
-		return 0
-	}
-	return v.(int)
-}
-
-func addTotalDistance(chairID string, delta int) int {
-	updated := getTotalDistance(chairID) + delta
-	totalDistances.Store(chairID, updated)
-
-	return updated
-}
 
 func main() {
 	http.DefaultServeMux.Handle("/debug/fgprof", fgprof.Handler())
@@ -48,7 +31,6 @@ func main() {
 		log.Println(http.ListenAndServe(":6060", nil))
 	}()
 
-	totalDistances = sync.Map{}
 	mux := setup()
 	slog.Info("Listening on :8080")
 	http.ListenAndServe(":8080", mux)
@@ -179,22 +161,28 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type tmpChairLocation struct {
-		ID        string
-		Latitude  int
-		Longitude int
+		Latitude      int
+		Longitude     int
+		TotalDistance int
 	}
 	var chairLocationMap = make(map[string]tmpChairLocation)
 	for _, cl := range chairLocations {
 		tmpLocation, ok := chairLocationMap[cl.ChairID]
 		if !ok {
-			chairLocationMap[cl.ChairID] = tmpChairLocation{ID: cl.ID, Latitude: cl.Latitude, Longitude: cl.Longitude}
+			chairLocationMap[cl.ChairID] = tmpChairLocation{Latitude: cl.Latitude, Longitude: cl.Longitude}
 			continue
 		}
-		addTotalDistance(cl.ChairID, abs(cl.Latitude-tmpLocation.Latitude)+abs(cl.Longitude-tmpLocation.Longitude))
 		chairLocationMap[cl.ChairID] = tmpChairLocation{
-			ID:        cl.ID,
-			Latitude:  cl.Latitude,
-			Longitude: cl.Longitude,
+			Latitude:      cl.Latitude,
+			Longitude:     cl.Longitude,
+			TotalDistance: tmpLocation.TotalDistance + abs(cl.Latitude-tmpLocation.Latitude) + abs(cl.Longitude-tmpLocation.Longitude),
+		}
+	}
+
+	for chairID, cl := range chairLocationMap {
+		if _, err := db.ExecContext(ctx, "INSERT INTO chair_total_distances (`chair_id`, `total_distance`) VALUES (?, ?)", chairID, cl.TotalDistance); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
 		}
 	}
 

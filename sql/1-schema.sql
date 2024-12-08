@@ -141,3 +141,12 @@ CREATE TABLE coupons
 )
   COMMENT 'クーポンテーブル';
 ALTER TABLE coupons ADD INDEX (used_by);
+
+DROP TABLE IF EXISTS chair_total_distances;
+CRATE TABLE chair_total_distances
+(
+  chair_id       VARCHAR(26) NOT NULL COMMENT '椅子ID',
+  total_distance INTEGER     NOT NULL COMMENT '移動距離',
+  PRIMARY KEY (chair_id)
+)
+  COMMENT = '椅子の移動距離テーブル';

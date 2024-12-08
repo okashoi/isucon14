@@ -205,9 +205,12 @@ SELECT
     is_active,
     created_at,
     updated_at,
+    IFNULL(total_distance, 0) AS total_distance,
     total_distance_updated_at
 FROM
     chairs
+	LEFT JOIN chair_total_distances
+        ON chairs.id = total_distance.chair_id
     LEFT JOIN (
         SELECT
             chair_id,
@@ -230,7 +233,7 @@ WHERE owner_id = ?
 			Model:         chair.Model,
 			Active:        chair.IsActive,
 			RegisteredAt:  chair.CreatedAt.UnixMilli(),
-			TotalDistance: getTotalDistance(chair.ID),
+			TotalDistance: chair.TotalDistance,
 		}
 		if chair.TotalDistanceUpdatedAt.Valid {
 			t := chair.TotalDistanceUpdatedAt.Time.UnixMilli()
