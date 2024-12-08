@@ -159,8 +159,9 @@ CREATE TABLE coupons
   COMMENT 'クーポンテーブル';
 ALTER TABLE coupons ADD INDEX (used_by);
 
+DROP VIEW IF EXISTS incompleted_chairs;
 CREATE VIEW incompleted_chairs AS
-SELECT c.id AS char_id
+SELECT c.id AS chair_id
 FROM chairs c
          JOIN (
     SELECT r.chair_id
