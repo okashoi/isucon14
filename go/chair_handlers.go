@@ -121,8 +121,8 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 距離の更新
-	var totalDistance int
-	if err := tx.GetContext(ctx, &totalDistance, `SELECT total_distance FROM chair_total_distances WHERE chair_id = ?`, chair.ID); err != nil {
+	totalDistance := &ChairTotalDistance{}
+	if err := tx.GetContext(ctx, totalDistance, `SELECT total_distance FROM chair_total_distances WHERE chair_id = ?`, chair.ID); err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusInternalServerError, err)
 			return
@@ -132,7 +132,9 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		if _, err := tx.ExecContext(ctx, `UPDATE chair_total_distances SET total_distance = ? WHERE chair_id = ?`, totalDistance, chair.ID); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE chair_total_distances SET total_distance = ? WHERE chair_id = ?`,
+			totalDistance.TotalDistance+abs(location.Latitude-req.Latitude)+abs(location.Longitude-req.Longitude),
+			chair.ID); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
