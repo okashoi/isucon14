@@ -28,30 +28,16 @@ func matchingOne() error {
 		return err
 	}
 
-	matched := &Chair{}
-	empty := false
-	for i := 0; i < 10; i++ {
-		// マンハッタン距離が最も近い椅子
-		if err := db.Get(matched, "SELECT * FROM chairs WHERE id = (SELECT l.chair_id FROM latest_chair_locations AS l INNER JOIN chairs AS c ON l.chair_id = c.id WHERE c.is_active = 1 ORDER BY ABS(latest_latitude - ?) + ABS(latest_longitude - ?) LIMIT 1)", ride.PickupLatitude, ride.PickupLongitude); err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				return nil
-			}
-			return err
+	var matchedChairId string
+	// マンハッタン距離が最も近い椅子
+	if err := db.Get(matchedChairId, "SELECT l.chair_id FROM latest_chair_locations AS l INNER JOIN chairs AS c ON l.chair_id = c.id WHERE c.is_active = 1 ORDER BY ABS(latest_latitude - ?) + ABS(latest_longitude - ?) LIMIT 1", ride.PickupLatitude, ride.PickupLongitude); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
 		}
-
-		// ↓ これ何やってるのか分からない。わかった人おしえて by pinkumohikan
-		if err := db.Get(&empty, "SELECT COUNT(*) = 0 FROM (SELECT COUNT(chair_sent_at) = 6 AS completed FROM ride_statuses WHERE ride_id IN (SELECT id FROM rides WHERE chair_id = ?) GROUP BY ride_id) is_completed WHERE completed = FALSE", matched.ID); err != nil {
-			return err
-		}
-		if empty {
-			break
-		}
-	}
-	if !empty {
-		return nil
+		return err
 	}
 
-	if _, err := db.Exec("UPDATE rides SET chair_id = ? WHERE id = ?", matched.ID, ride.ID); err != nil {
+	if _, err := db.Exec("UPDATE rides SET chair_id = ? WHERE id = ? AND char_id IS NULL", matchedChairId, ride.ID); err != nil {
 		return err
 	}
 
