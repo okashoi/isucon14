@@ -32,7 +32,7 @@ func matchingOne() error {
 	empty := false
 	for i := 0; i < 10; i++ {
 		// マンハッタン距離が最も近い椅子
-		if err := db.Get(matched, "SELECT * FROM chairs WHERE is_active = 1 ORDER BY ABS(latest_latitude - ?) + ABS(latest_longitude - ?) LIMIT 1", ride.PickupLatitude, ride.PickupLongitude); err != nil {
+		if err := db.Get(matched, "SELECT * FROM chairs WHERE id = (SELECT l.chair_id FROM latest_chair_locations AS l INNER JOIN chairs AS c ON l.chair_id = c.id WHERE c.is_active = 1 ORDER BY ABS(latest_latitude - ?) + ABS(latest_longitude - ?) LIMIT 1)", ride.PickupLatitude, ride.PickupLongitude); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil
 			}

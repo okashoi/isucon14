@@ -30,8 +30,6 @@ CREATE TABLE chairs
   model        TEXT         NOT NULL COMMENT '椅子のモデル',
   is_active    TINYINT(1)   NOT NULL COMMENT '配椅子受付中かどうか',
   access_token VARCHAR(255) NOT NULL COMMENT 'アクセストークン',
-  latest_latitude   INTEGER     NOT NULL DEFAULT 0 COMMENT '最新の経度',
-  latest_longitude  INTEGER     NOT NULL DEFAULT 0 COMMENT '最新の緯度',
   created_at   DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '登録日時',
   updated_at   DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '更新日時',
   PRIMARY KEY (id)
@@ -39,7 +37,7 @@ CREATE TABLE chairs
   COMMENT = '椅子情報テーブル';
 ALTER TABLE chairs ADD INDEX (access_token);
 ALTER TABLE chairs ADD INDEX (owner_id);
-ALTER TABLE chairs ADD INDEX (is_active, latest_latitude, latest_longitude);
+ALTER TABLE chairs ADD INDEX (is_active);
 
 DROP TABLE IF EXISTS chair_locations;
 CREATE TABLE chair_locations
@@ -53,10 +51,20 @@ CREATE TABLE chair_locations
 )
   COMMENT = '椅子の現在位置情報テーブル';
 ALTER TABLE chair_locations ADD INDEX (chair_id, created_at DESC);
-CREATE TRIGGER update_chairs_latest_position
+
+DROP TABLE IF EXISTS latest_chair_locations;
+CREATE TABLE latest_chair_locations
+(
+    chair_id         VARCHAR(26) NOT NULL,
+    latest_latitude  INTEGER     NOT NULL,
+    latest_longitude INTEGER     NOT NULL,
+    PRIMARY KEY (chair_id),
+    INDEX (chair_id, latest_latitude, latest_longitude)
+);
+CREATE TRIGGER update_latest_chair_location
     AFTER INSERT ON chair_locations
     FOR EACH ROW
-    UPDATE chairs SET latest_latitude = NEW.latitude, latest_longitude = NEW.longitude WHERE id = NEW.chair_id;
+    INSERT INTO latest_chair_locations (chair_id, latest_latitude, latest_longitude) VALUES (NEW.chair_id, NEW.latitude, NEW.longitude) ON DUPLICATE KEY UPDATE latest_latitude = NEW.latitude, latest_longitude = NEW.longitude;
 
 DROP TABLE IF EXISTS users;
 CREATE TABLE users
