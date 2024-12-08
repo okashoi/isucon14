@@ -8,19 +8,24 @@ import (
 )
 
 func matchingAuto() {
-	t := time.NewTicker(100 * time.Millisecond)
+	t1 := time.NewTicker(100 * time.Millisecond)
+	t2 := time.NewTicker(500 * time.Millisecond)
 	for {
 		select {
-		case <-t.C:
-			_ = matchingOne()
+		case <-t1.C:
+			if err := matchingBigMoney(); err != nil {
+				log.Printf("matchingOldest() failed: %v\n", err)
+			}
+		case <-t2.C:
+			// NOTE: 古いやつを捌いてないと怒られる
+			if err := matchingOldest(); err != nil {
+				log.Printf("matchingOldest() failed: %v\n", err)
+			}
 		}
 	}
 }
 
-func matchingOne() error {
-	t := time.Now()
-
-	// MEMO: 一旦最も待たせているリクエストに適当な空いている椅子マッチさせる実装とする。おそらくもっといい方法があるはず…
+func matchingOldest() error {
 	ride := &Ride{}
 	if err := db.Get(ride, `SELECT * FROM rides WHERE chair_id IS NULL ORDER BY ABS(pickup_latitude - destination_latitude) + ABS(pickup_longitude - destination_longitude) DESC LIMIT 1`); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -28,6 +33,24 @@ func matchingOne() error {
 		}
 		return err
 	}
+
+	return matching(ride)
+}
+
+func matchingBigMoney() error {
+	ride := &Ride{}
+	if err := db.Get(ride, `SELECT * FROM rides WHERE chair_id IS NULL ORDER BY ABS(pickup_latitude - destination_latitude) + ABS(pickup_longitude - destination_longitude) DESC LIMIT 1`); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+
+	return matching(ride)
+}
+
+func matching(ride *Ride) error {
+	t := time.Now()
 
 	matched := &Chair{}
 	empty := false
