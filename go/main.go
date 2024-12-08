@@ -4,16 +4,16 @@ import (
 	crand "crypto/rand"
 	"encoding/json"
 	"fmt"
+	"github.com/felixge/fgprof"
 	"log"
 	"log/slog"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/exec"
 	"strconv"
-
-	"github.com/felixge/fgprof"
-	_ "net/http/pprof"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -158,6 +158,12 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 type Coordinate struct {
 	Latitude  int `json:"latitude"`
 	Longitude int `json:"longitude"`
+}
+
+type CoordinateBF struct {
+	Latitude  int       `json:"latitude"`
+	Longitude int       `json:"longitude"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func bindJSON(r *http.Request, v interface{}) error {

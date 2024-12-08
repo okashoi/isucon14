@@ -174,32 +174,37 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 // グローバル変数
 var (
 	bufferLock    sync.Mutex
-	coordinateBuf []*Coordinate
+	coordinateBuf []*CoordinateBF
 )
 
 // HTTPリクエストを処理
 func chairPostCoordinateBF(w http.ResponseWriter, r *http.Request) {
-	r.Context()
 	req := &Coordinate{}
 	if err := bindJSON(r, req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	// バッファにデータを追加
+	// 現在のタイムスタンプを生成
+	latestTimestamp := time.Now()
+
+	// バッファにデータを追加（タイムスタンプ込み）
 	bufferLock.Lock()
-	coordinateBuf = append(coordinateBuf, req)
+	coordinateBuf = append(coordinateBuf, &CoordinateBF{
+		Latitude:  req.Latitude,
+		Longitude: req.Longitude,
+		CreatedAt: latestTimestamp, // ここで作成時刻を保持
+	})
 	bufferLock.Unlock()
 
 	// レスポンスを返す
-	latestTimestamp := time.Now().UnixMilli()
 	writeJSON(w, http.StatusOK, &chairPostCoordinateResponse{
-		RecordedAt: latestTimestamp,
+		RecordedAt: latestTimestamp.UnixMilli(),
 	})
 }
 
 // 座標データをバルクインサート
-func bulkInsertCoordinates(ctx context.Context, tx *sqlx.Tx, coordinates []*Coordinate) error {
+func bulkInsertCoordinates(ctx context.Context, tx *sqlx.Tx, coordinates []*CoordinateBF) error {
 	if len(coordinates) == 0 {
 		return nil
 	}
@@ -211,7 +216,7 @@ func bulkInsertCoordinates(ctx context.Context, tx *sqlx.Tx, coordinates []*Coor
 	values := []interface{}{}
 	for _, coord := range coordinates {
 		query += "(?, ?, ?, ?, ?),"
-		values = append(values, ulid.Make().String(), "chair_id_placeholder", coord.Latitude, coord.Longitude, time.Now())
+		values = append(values, ulid.Make().String(), "chair_id_placeholder", coord.Latitude, coord.Longitude, coord.CreatedAt)
 	}
 	query = query[:len(query)-1] // 最後のカンマを削除
 
@@ -223,7 +228,7 @@ func bulkInsertCoordinates(ctx context.Context, tx *sqlx.Tx, coordinates []*Coor
 // 定期的にバッファ内のデータを処理
 func startBufferProcessor() {
 	ctx := context.Background()
-	ticker := time.NewTicker(10 * time.Millisecond)
+	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
 	for {
