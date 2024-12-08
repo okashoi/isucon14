@@ -19,9 +19,6 @@ func matchingAuto() {
 
 func matchingOne() error {
 	t := time.Now()
-	defer func() {
-		log.Printf("matchingOne() done (%d ms)\n", time.Since(t).Milliseconds())
-	}()
 
 	// MEMO: 一旦最も待たせているリクエストに適当な空いている椅子マッチさせる実装とする。おそらくもっといい方法があるはず…
 	ride := &Ride{}
@@ -53,6 +50,11 @@ func matchingOne() error {
 		return nil
 	}
 
-	_, err := db.Exec("UPDATE rides SET chair_id = ? WHERE id = ?", matched.ID, ride.ID)
-	return err
+	if _, err := db.Exec("UPDATE rides SET chair_id = ? WHERE id = ?", matched.ID, ride.ID); err != nil {
+		return err
+	}
+
+	log.Printf("matchingOne() matching done (%d ms)\n", time.Since(t).Milliseconds())
+
+	return nil
 }
