@@ -433,6 +433,8 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 
 	req := &postChairRidesRideIDStatusRequest{}
 	if err := bindJSON(r, req); err != nil {
+		log.Println("Failed to bind json")
+		log.Println(err)
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
