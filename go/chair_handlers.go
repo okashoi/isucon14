@@ -150,6 +150,8 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 					writeError(w, http.StatusInternalServerError, err)
 					return
 				}
+
+				updateRideStatusCache(ride.ID, "PICKUP")
 			}
 
 			if req.Latitude == ride.DestinationLatitude && req.Longitude == ride.DestinationLongitude && status == "CARRYING" {
@@ -157,6 +159,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 					writeError(w, http.StatusInternalServerError, err)
 					return
 				}
+				updateRideStatusCache(ride.ID, "ARRIVED")
 			}
 		}
 	}
@@ -227,6 +230,7 @@ func chairPostCoordinateBF(w http.ResponseWriter, r *http.Request) {
 					writeError(w, http.StatusInternalServerError, err)
 					return
 				}
+				updateRideStatusCache(ride.ID, "PICKUP")
 			}
 
 			if req.Latitude == ride.DestinationLatitude && req.Longitude == ride.DestinationLongitude && status == "CARRYING" {
@@ -234,6 +238,7 @@ func chairPostCoordinateBF(w http.ResponseWriter, r *http.Request) {
 					writeError(w, http.StatusInternalServerError, err)
 					return
 				}
+				updateRideStatusCache(ride.ID, "ARRIVED")
 			}
 		}
 	}
@@ -429,6 +434,7 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 	chair := ctx.Value("chair").(*Chair)
 
 	req := &postChairRidesRideIDStatusRequest{}
+
 	if err := bindJSON(r, req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -455,7 +461,7 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("not assigned to this ride"))
 		return
 	}
-
+	tmpStatus := ""
 	switch req.Status {
 	// Acknowledge the ride
 	case "ENROUTE":
@@ -463,6 +469,8 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
+		tmpStatus = "ENROUTE"
+
 	// After Picking up user
 	case "CARRYING":
 		status, err := getLatestRideStatus(ctx, tx, ride.ID)
@@ -478,6 +486,7 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
+		tmpStatus = "CARRYING"
 	default:
 		writeError(w, http.StatusBadRequest, errors.New("invalid status"))
 	}
@@ -485,6 +494,9 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 	if err := tx.Commit(); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
+	}
+	if tmpStatus != "" {
+		updateRideStatusCache(ride.ID, tmpStatus)
 	}
 
 	w.WriteHeader(http.StatusNoContent)

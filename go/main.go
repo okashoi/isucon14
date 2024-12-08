@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -151,7 +152,9 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	rideStatusCache = make(map[string]string)
 	CoordinateBuf = []*CoordinateBF{}
+	AccessTokenCache = sync.Map{}
 	writeJSON(w, http.StatusOK, postInitializeResponse{Language: "go"})
 }
 
