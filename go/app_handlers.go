@@ -311,7 +311,7 @@ func getLatestRideStatuses(ctx context.Context, tx *sqlx.Tx, rideIDs []string) (
 
 	// クエリ結果を格納する構造体
 	type RideStatusRow struct {
-		RideID int    `db:"ride_id"`
+		RideID string `db:"ride_id"`
 		Status string `db:"status"`
 	}
 
@@ -322,7 +322,7 @@ func getLatestRideStatuses(ctx context.Context, tx *sqlx.Tx, rideIDs []string) (
 	}
 
 	// 結果をマップに変換
-	statuses := make(map[int]string)
+	statuses := make(map[string]string)
 	for _, row := range rows {
 		statuses[row.RideID] = row.Status
 	}
