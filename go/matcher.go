@@ -40,7 +40,7 @@ func matchingOne() error {
 		return err
 	}
 
-	if _, err := db.Exec("UPDATE rides SET chair_id = ? WHERE id = ? AND char_id IS NULL", matchedChairId, ride.ID); err != nil {
+	if _, err := db.Exec("UPDATE rides SET chair_id = ? WHERE id = ? AND chair_id IS NULL", matchedChairId, ride.ID); err != nil {
 		return err
 	}
 
