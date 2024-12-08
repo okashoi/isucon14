@@ -151,9 +151,8 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-
 	rideStatusCache = make(map[string]string)
-
+	CoordinateBuf = []*CoordinateBF{}
 	writeJSON(w, http.StatusOK, postInitializeResponse{Language: "go"})
 }
 

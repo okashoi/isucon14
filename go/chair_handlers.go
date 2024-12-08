@@ -177,7 +177,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 // グローバル変数
 var (
 	bufferLock    sync.Mutex
-	coordinateBuf []*CoordinateBF
+	CoordinateBuf []*CoordinateBF
 )
 
 // HTTPリクエストを処理
@@ -204,7 +204,7 @@ func chairPostCoordinateBF(w http.ResponseWriter, r *http.Request) {
 	// バッファにデータを追加（タイムスタンプ込み）
 	bufferLock.Lock()
 	chairLocationID := ulid.Make().String()
-	coordinateBuf = append(coordinateBuf, &CoordinateBF{
+	CoordinateBuf = append(CoordinateBuf, &CoordinateBF{
 		ID:        chairLocationID,
 		ChairID:   chair.ID,
 		Latitude:  req.Latitude,
@@ -263,7 +263,6 @@ func bulkInsertCoordinates(ctx context.Context, tx *sqlx.Tx, coordinates []*Coor
         INSERT INTO chair_locations (id, chair_id, latitude, longitude, created_at)
         VALUES (:id, :chair_id, :latitude, :longitude, :created_at)`
 
-	// 各 CoordinateBF を NamedExec 用のマップに変換
 	if _, err := tx.NamedExecContext(ctx, query, coordinates); err != nil {
 		log.Printf("Failed to insert location: %v", err)
 		return err
@@ -287,16 +286,14 @@ func startBufferProcessor() {
 
 // バッファ内のデータを保存し、関連する rides を処理
 func saveBufferedCoordinates(ctx context.Context) {
-	bufferLock.Lock()
-	defer bufferLock.Unlock()
-
-	if len(coordinateBuf) == 0 {
+	if len(CoordinateBuf) == 0 {
 		return
 	}
 
-	// バッファの内容をコピーしてクリア
-	toSave := coordinateBuf
-	coordinateBuf = nil
+	bufferLock.Lock()
+	toSave := CoordinateBuf
+	CoordinateBuf = nil
+	bufferLock.Unlock()
 
 	// トランザクションを開始
 	tx, err := db.Beginx()
