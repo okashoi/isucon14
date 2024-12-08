@@ -954,6 +954,14 @@ type appGetNearbyChairsResponseChair struct {
 	CurrentCoordinate Coordinate `json:"current_coordinate"`
 }
 
+// sql.NullString を安全に string に変換するヘルパー関数
+func nullStringToString(nullStr sql.NullString) string {
+	if nullStr.Valid {
+		return nullStr.String
+	}
+	return ""
+}
+
 func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	latStr := r.URL.Query().Get("latitude")
@@ -1006,31 +1014,59 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	nearbyChairs := []appGetNearbyChairsResponseChair{}
+
+	// 有効な椅子だけをフィルタリング
+	activeChairs := []Chair{}
 	for _, chair := range chairs {
-		if !chair.IsActive {
-			continue
+		if chair.IsActive {
+			activeChairs = append(activeChairs, chair)
 		}
+	}
 
-		rides := []*Ride{}
-		if err := tx.SelectContext(ctx, &rides, `SELECT * FROM rides WHERE chair_id = ? ORDER BY created_at DESC`, chair.ID); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
+	// 椅子の ID を収集
+	chairIDs := make([]string, len(activeChairs))
+	for i, chair := range activeChairs {
+		chairIDs[i] = chair.ID
+	}
 
+	// すべての rides を一括取得
+	rides := []*Ride{}
+	query, args, err := sqlx.In(`
+    SELECT * FROM rides
+    WHERE chair_id IN (?)
+    ORDER BY created_at DESC`, chairIDs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	query = tx.Rebind(query)
+	if err := tx.SelectContext(ctx, &rides, query, args...); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// rides を chairID ごとにグループ化
+	ridesByChairID := make(map[string][]*Ride)
+	for _, ride := range rides {
+		c := nullStringToString(ride.ChairID)
+		ridesByChairID[c] = append(ridesByChairID[c], ride)
+	}
+
+	// rideID を収集して一括でステータスを取得
+	rideIDs := make([]string, len(rides))
+	for i, ride := range rides {
+		rideIDs[i] = ride.ID
+	}
+	statusMap, err := getLatestRideStatuses(ctx, tx, rideIDs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// 椅子ごとの処理
+	for _, chair := range activeChairs {
+		rides := ridesByChairID[chair.ID]
 		skip := false
-		// ここで全ridesのIDをまとめて取得
-		rideIDs := make([]string, 0, len(rides))
-		for _, ride := range rides {
-			rideIDs = append(rideIDs, ride.ID)
-		}
-
-		// 複数のライドステータスをまとめて取得
-		statusMap, err := getLatestRideStatuses(ctx, tx, rideIDs)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-
 		for _, ride := range rides {
 			if statusMap[ride.ID] != "COMPLETED" {
 				skip = true
@@ -1041,23 +1077,33 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// 最新の位置情報を取得
-		chairLocation := &ChairLocation{}
-		err = tx.GetContext(
-			ctx,
-			chairLocation,
-			`SELECT * FROM chair_locations WHERE chair_id = ? ORDER BY created_at DESC LIMIT 1`,
-			chair.ID,
-		)
+		// 最新の位置情報を一括取得
+		chairLocations := []*ChairLocation{}
+		query, args, err = sqlx.In(`
+        SELECT * FROM chair_locations
+        WHERE chair_id IN (?)
+        ORDER BY chair_id, created_at DESC`, chairIDs)
 		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				continue
-			}
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		query = tx.Rebind(query)
+		if err := tx.SelectContext(ctx, &chairLocations, query, args...); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
 
-		if calculateDistance(coordinate.Latitude, coordinate.Longitude, chairLocation.Latitude, chairLocation.Longitude) <= distance {
+		// 最新の位置情報を chairID ごとにマッピング
+		locationByChairID := make(map[string]*ChairLocation)
+		for _, loc := range chairLocations {
+			if _, exists := locationByChairID[loc.ChairID]; !exists {
+				locationByChairID[loc.ChairID] = loc
+			}
+		}
+
+		// 椅子が距離内にあるか判定
+		chairLocation := locationByChairID[chair.ID]
+		if chairLocation != nil && calculateDistance(coordinate.Latitude, coordinate.Longitude, chairLocation.Latitude, chairLocation.Longitude) <= distance {
 			nearbyChairs = append(nearbyChairs, appGetNearbyChairsResponseChair{
 				ID:    chair.ID,
 				Name:  chair.Name,
