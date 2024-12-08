@@ -193,8 +193,8 @@ func chairPostCoordinateBF(w http.ResponseWriter, r *http.Request) {
 
 	// レスポンスを返す
 	latestTimestamp := time.Now().UnixMilli()
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"RecordedAt": latestTimestamp,
+	writeJSON(w, http.StatusOK, &chairPostCoordinateResponse{
+		RecordedAt: latestTimestamp,
 	})
 }
 
@@ -223,7 +223,7 @@ func bulkInsertCoordinates(ctx context.Context, tx *sqlx.Tx, coordinates []*Coor
 // 定期的にバッファ内のデータを処理
 func startBufferProcessor() {
 	ctx := context.Background()
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
 	for {
