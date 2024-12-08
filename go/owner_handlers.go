@@ -210,7 +210,7 @@ SELECT
 FROM
     chairs
 	LEFT JOIN chair_total_distances
-        ON chairs.id = total_distance.chair_id
+        ON chairs.id = chair_total_distances.chair_id
     LEFT JOIN (
         SELECT
             chair_id,
