@@ -230,7 +230,7 @@ func startBufferProcessor() {
 	ctx := context.Background()
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
-
+	log.Println("Starting buffer processor.")
 	for {
 		select {
 		case <-ctx.Done():
