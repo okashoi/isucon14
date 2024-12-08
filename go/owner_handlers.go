@@ -207,7 +207,7 @@ func ownerGetChairs(w http.ResponseWriter, r *http.Request) {
        total_distance_updated_at
 FROM chairs
        LEFT JOIN (SELECT chair_id,
-                         MAX(total_distance),
+                         MAX(total_distance) AS total_distance,
                         MAX(created_at) AS total_distance_updated_at
                    FROM chair_locations
                    GROUP BY chair_id) distance_table ON distance_table.chair_id = chairs.id
