@@ -37,6 +37,7 @@ CREATE TABLE chairs
   COMMENT = '椅子情報テーブル';
 ALTER TABLE chairs ADD INDEX (access_token);
 ALTER TABLE chairs ADD INDEX (owner_id);
+ALTER TABLE chairs ADD INDEX (is_active);
 
 DROP TABLE IF EXISTS chair_locations;
 CREATE TABLE chair_locations
@@ -141,3 +142,24 @@ CREATE TABLE coupons
 )
   COMMENT 'クーポンテーブル';
 ALTER TABLE coupons ADD INDEX (used_by);
+
+
+DROP VIEW IF EXISTS active_chair_locations;
+CREATE VIEW active_chair_locations AS
+SELECT id,
+       chair_id,
+       latitude,
+       longitude,
+       created_at
+FROM (
+         SELECT l.id,
+                l.chair_id,
+                l.latitude,
+                l.longitude,
+                l.created_at,
+                ROW_NUMBER() OVER (PARTITION BY l.chair_id ORDER BY l.created_at DESC) AS rn
+         FROM chair_locations AS l
+         INNER JOIN chairs AS c ON l.chair_id = c.id
+         WHERE c.is_active = 1
+     ) t
+WHERE rn = 1;
