@@ -434,8 +434,6 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 	req := &postChairRidesRideIDStatusRequest{}
 
 	if err := bindJSON(r, req); err != nil {
-		log.Println("Failed to bind json")
-		log.Println(err)
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -450,6 +448,7 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 	ride := &Ride{}
 	if err := tx.GetContext(ctx, ride, "SELECT * FROM rides WHERE id = ? FOR UPDATE", rideID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
+			log.Println("chairPostRideStatus ride not found")
 			writeError(w, http.StatusNotFound, errors.New("ride not found"))
 			return
 		}
@@ -458,6 +457,7 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if ride.ChairID.String != chair.ID {
+		log.Println("chairPostRideStatus not assigned to this ride")
 		writeError(w, http.StatusBadRequest, errors.New("not assigned to this ride"))
 		return
 	}
@@ -480,6 +480,7 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if status != "PICKUP" {
+			log.Println("chairPostRideStatus chair has not arrived yet")
 			writeError(w, http.StatusBadRequest, errors.New("chair has not arrived yet"))
 			return
 		}
@@ -491,6 +492,7 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 		updateRideStatusCache(ride.ID, tmpStatus)
 
 	default:
+		log.Println("chairPostRideStatus invalid status")
 		writeError(w, http.StatusBadRequest, errors.New("invalid status"))
 	}
 
