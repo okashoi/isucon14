@@ -152,6 +152,39 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var chairLocations []ChairLocation
+	if err := db.SelectContext(ctx, &chairLocations, "SELECT id, chair_id, latitude, longitude FROM chair_locations ORDER BY created_at ASC"); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	type tmpChairLocation struct {
+		ID            string
+		Latitude      int
+		Longitude     int
+		TotalDistance int
+	}
+	var chairLocationMap = make(map[string]tmpChairLocation)
+	for _, cl := range chairLocations {
+		tmpLocation, ok := chairLocationMap[cl.ChairID]
+		if !ok {
+			chairLocationMap[cl.ChairID] = tmpChairLocation{ID: cl.ID, Latitude: cl.Latitude, Longitude: cl.Longitude}
+			continue
+		}
+		chairLocationMap[cl.ChairID] = tmpChairLocation{
+			ID:            cl.ID,
+			Latitude:      cl.Latitude,
+			Longitude:     cl.Longitude,
+			TotalDistance: tmpLocation.TotalDistance + abs(cl.Latitude-tmpLocation.Latitude) + abs(cl.Longitude-tmpLocation.Longitude),
+		}
+	}
+	for _, latestLocation := range chairLocationMap {
+		if _, err := db.ExecContext(ctx, "UPDATE chair_locations SET total_distance = ? WHERE id = ?", latestLocation.TotalDistance, latestLocation.ID); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+
 	writeJSON(w, http.StatusOK, postInitializeResponse{Language: "go"})
 }
 

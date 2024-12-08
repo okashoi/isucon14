@@ -207,15 +207,9 @@ func ownerGetChairs(w http.ResponseWriter, r *http.Request) {
        total_distance_updated_at
 FROM chairs
        LEFT JOIN (SELECT chair_id,
-                          SUM(IFNULL(distance, 0)) AS total_distance,
-                          MAX(created_at)          AS total_distance_updated_at
-                   FROM (SELECT chair_id,
-                                created_at,
-                                ABS(latitude - LAG(latitude) OVER (PARTITION BY chair_id ORDER BY created_at)) +
-                                ABS(longitude - LAG(longitude) OVER (PARTITION BY chair_id ORDER BY created_at)) AS distance
-                         FROM chair_locations
-                         WHERE chair_id IN (SELECT id FROM chairs WHERE owner_id = ?)
-                         ) tmp
+                         total_distance,
+                        MAX(created_at) AS total_distance_updated_at
+                   FROM chair_locations
                    GROUP BY chair_id) distance_table ON distance_table.chair_id = chairs.id
 WHERE owner_id = ?
 `, owner.ID, owner.ID); err != nil {
