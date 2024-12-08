@@ -196,6 +196,8 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	CoordinateBuf = []*CoordinateBF{}
+
 	writeJSON(w, http.StatusOK, postInitializeResponse{Language: "go"})
 }
 

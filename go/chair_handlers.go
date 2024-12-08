@@ -177,7 +177,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 // グローバル変数
 var (
 	bufferLock      sync.Mutex
-	coordinateBuf   []*CoordinateBF
+	CoordinateBuf []*CoordinateBF
 	tmpLocationsMap sync.Map
 )
 
@@ -205,7 +205,7 @@ func chairPostCoordinateBF(w http.ResponseWriter, r *http.Request) {
 	// バッファにデータを追加（タイムスタンプ込み）
 	bufferLock.Lock()
 	chairLocationID := ulid.Make().String()
-	coordinateBuf = append(coordinateBuf, &CoordinateBF{
+	CoordinateBuf = append(CoordinateBuf, &CoordinateBF{
 		ID:        chairLocationID,
 		ChairID:   chair.ID,
 		Latitude:  req.Latitude,
@@ -318,13 +318,13 @@ func startBufferProcessor() {
 
 // バッファ内のデータを保存し、関連する rides を処理
 func saveBufferedCoordinates(ctx context.Context) {
-	if len(coordinateBuf) == 0 {
+	if len(CoordinateBuf) == 0 {
 		return
 	}
 
 	bufferLock.Lock()
-	toSave := coordinateBuf
-	coordinateBuf = nil
+	toSave := CoordinateBuf
+	CoordinateBuf = nil
 	bufferLock.Unlock()
 
 	// トランザクションを開始
