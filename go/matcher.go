@@ -20,7 +20,7 @@ func matchingAuto() {
 func matchingOne() error {
 	t := time.Now()
 	defer func() {
-		log.Printf("matchingOne() done (%s ms)\n", time.Since(t).Milliseconds())
+		log.Printf("matchingOne() done (%d ms)\n", time.Since(t).Milliseconds())
 	}()
 
 	// MEMO: 一旦最も待たせているリクエストに適当な空いている椅子マッチさせる実装とする。おそらくもっといい方法があるはず…
