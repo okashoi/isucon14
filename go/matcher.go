@@ -32,7 +32,7 @@ func matchingOne() error {
 
 	var matchedChairId string
 	// マンハッタン距離が最も近い椅子
-	if err := db.Get(&matchedChairId, "SELECT l.chair_id FROM latest_chair_locations AS l INNER JOIN chairs AS c ON l.chair_id = c.id WHERE c.is_active = 1 ORDER BY ABS(latest_latitude - ?) + ABS(latest_longitude - ?) LIMIT 1", ride.PickupLatitude, ride.PickupLongitude); err != nil {
+	if err := db.Get(&matchedChairId, "SELECT l.chair_id FROM latest_chair_locations AS l WHERE l.chair_id IN (SELECT id FROM chairs WHERE is_active = 1 AND 0 = (SELECT COUNT(*) FROM rides WHERE chair_id = l.char_id AND evaluation IS NULL)) ORDER BY ABS(latest_latitude - ?) + ABS(latest_longitude - ?) LIMIT 1", ride.PickupLatitude, ride.PickupLongitude); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			log.Println("matchingOne() no chair found")
 			return nil
