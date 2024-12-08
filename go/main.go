@@ -119,6 +119,8 @@ func setup() http.Handler {
 		mux.HandleFunc("GET /api/internal/matching", internalGetMatching)
 	}
 
+	go matchingAuto()
+
 	return mux
 }
 
