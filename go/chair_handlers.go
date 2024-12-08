@@ -100,7 +100,6 @@ type chairPostCoordinateResponse struct {
 }
 
 func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
-	time.Sleep(100 * time.Millisecond)
 	ctx := r.Context()
 	req := &Coordinate{}
 	if err := bindJSON(r, req); err != nil {
@@ -180,6 +179,7 @@ var (
 
 // HTTPリクエストを処理
 func chairPostCoordinateBF(w http.ResponseWriter, r *http.Request) {
+	time.Sleep(100 * time.Millisecond) // 100ms待つ
 	req := &Coordinate{}
 	if err := bindJSON(r, req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
