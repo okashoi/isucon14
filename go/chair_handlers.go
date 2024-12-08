@@ -180,6 +180,21 @@ var (
 // HTTPリクエストを処理
 func chairPostCoordinateBF(w http.ResponseWriter, r *http.Request) {
 	req := &Coordinate{}
+	ctx := r.Context()
+	if err := bindJSON(r, req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	chair := ctx.Value("chair").(*Chair)
+
+	tx, err := db.Beginx()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer tx.Rollback()
+
 	if err := bindJSON(r, req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -196,6 +211,39 @@ func chairPostCoordinateBF(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: latestTimestamp, // ここで作成時刻を保持
 	})
 	bufferLock.Unlock()
+	ride := &Ride{}
+	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1`, chair.ID); err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+	} else {
+		status, err := getLatestRideStatus(ctx, tx, ride.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		if status != "COMPLETED" && status != "CANCELED" {
+			if req.Latitude == ride.PickupLatitude && req.Longitude == ride.PickupLongitude && status == "ENROUTE" {
+				if _, err := tx.ExecContext(ctx, "INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)", ulid.Make().String(), ride.ID, "PICKUP"); err != nil {
+					writeError(w, http.StatusInternalServerError, err)
+					return
+				}
+			}
+
+			if req.Latitude == ride.DestinationLatitude && req.Longitude == ride.DestinationLongitude && status == "CARRYING" {
+				if _, err := tx.ExecContext(ctx, "INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)", ulid.Make().String(), ride.ID, "ARRIVED"); err != nil {
+					writeError(w, http.StatusInternalServerError, err)
+					return
+				}
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
 
 	// レスポンスを返す
 	writeJSON(w, http.StatusOK, &chairPostCoordinateResponse{
@@ -266,53 +314,6 @@ func saveBufferedCoordinates(ctx context.Context) {
 	if err := bulkInsertCoordinates(ctx, tx, toSave); err != nil {
 		log.Printf("Failed to bulk insert coordinates: %v", err)
 		return
-	}
-
-	// rides の処理
-	for _, coord := range toSave {
-		ride := &Ride{}
-		err := tx.GetContext(ctx, ride, `
-            SELECT * FROM rides 
-            WHERE chair_id = ? 
-            ORDER BY updated_at DESC LIMIT 1`, "chair_id_placeholder")
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			log.Printf("Failed to get latest ride: %v", err)
-			return
-		}
-
-		// ride が見つかった場合、ステータスを確認
-		if err == nil {
-			status, err := getLatestRideStatus(ctx, tx, ride.ID)
-			if err != nil {
-				log.Printf("Failed to get latest ride status: %v", err)
-				return
-			}
-
-			// ステータスに応じた更新処理
-			if status != "COMPLETED" && status != "CANCELED" {
-				// Pickup location と一致する場合
-				if coord.Latitude == ride.PickupLatitude && coord.Longitude == ride.PickupLongitude && status == "ENROUTE" {
-					if _, err := tx.ExecContext(ctx, `
-                        INSERT INTO ride_statuses (id, ride_id, status) 
-                        VALUES (?, ?, ?)`,
-						ulid.Make().String(), ride.ID, "PICKUP"); err != nil {
-						log.Printf("Failed to insert ride status: %v", err)
-						return
-					}
-				}
-
-				// Destination location と一致する場合
-				if coord.Latitude == ride.DestinationLatitude && coord.Longitude == ride.DestinationLongitude && status == "CARRYING" {
-					if _, err := tx.ExecContext(ctx, `
-                        INSERT INTO ride_statuses (id, ride_id, status) 
-                        VALUES (?, ?, ?)`,
-						ulid.Make().String(), ride.ID, "ARRIVED"); err != nil {
-						log.Printf("Failed to insert ride status: %v", err)
-						return
-					}
-				}
-			}
-		}
 	}
 
 	// コミット
