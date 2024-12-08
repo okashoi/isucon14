@@ -124,26 +124,6 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 距離の更新
-	totalDistance := &ChairTotalDistance{}
-	if err := tx.GetContext(ctx, totalDistance, `SELECT total_distance FROM chair_total_distances WHERE chair_id = ?`, chair.ID); err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-		if _, err := tx.ExecContext(ctx, "INSERT INTO chair_total_distances (chair_id, total_distance) VALUES (?, 0)", chair.ID); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-	} else {
-		if _, err := tx.ExecContext(ctx, `UPDATE chair_total_distances SET total_distance = ? WHERE chair_id = ?`,
-			totalDistance.TotalDistance+abs(location.Latitude-req.Latitude)+abs(location.Longitude-req.Longitude),
-			chair.ID); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-	}
-
 	chairLocationID := ulid.Make().String()
 	createdAt := time.Now()
 	if _, err := tx.ExecContext(
@@ -196,8 +176,9 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 
 // グローバル変数
 var (
-	bufferLock    sync.Mutex
-	coordinateBuf []*CoordinateBF
+	bufferLock      sync.Mutex
+	coordinateBuf   []*CoordinateBF
+	tmpLocationsMap sync.Map
 )
 
 // HTTPリクエストを処理
@@ -278,7 +259,38 @@ func bulkInsertCoordinates(ctx context.Context, tx *sqlx.Tx, coordinates []*Coor
 		return nil
 	}
 
-	// INSERT 文テンプレート
+	type tmpLocation struct {
+		Latitude  int
+		Longitude int
+	}
+
+	tmpLocationsMap = sync.Map{}
+	for _, c := range coordinates {
+		v, ok := tmpLocationsMap.Load(c.ChairID)
+
+		if !ok {
+			// 今回の更新で最初の 1 件
+			chairLocation := &ChairLocation{}
+			if err := tx.GetContext(ctx, chairLocation, `SELECT * FROM chair_locations WHERE chair_id = ? ORDER BY created_at DESC LIMIT 1`, c.ChairID); err != nil {
+				if !errors.Is(err, sql.ErrNoRows) {
+					return err
+				}
+				// DB 上でも最初の 1 件だったとき
+			} else {
+				// DB にはデータがある場合
+				addTotalDistance(c.ChairID, abs(c.Latitude-chairLocation.Latitude)+abs(c.Longitude-chairLocation.Longitude))
+			}
+		} else {
+			// 2 回目以降の更新
+			tl := v.(tmpLocation)
+			addTotalDistance(c.ChairID, abs(c.Latitude-tl.Latitude)+abs(c.Longitude-tl.Longitude))
+		}
+		tmpLocationsMap.Store(c.ChairID, tmpLocation{
+			Latitude:  c.Latitude,
+			Longitude: c.Longitude,
+		})
+	}
+
 	query := `
         INSERT INTO chair_locations (id, chair_id, latitude, longitude, created_at)
         VALUES (:id, :chair_id, :latitude, :longitude, :created_at)`
