@@ -116,18 +116,21 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	chairLocationID := ulid.Make().String()
-	if _, err := tx.ExecContext(
-		ctx,
-		`INSERT INTO chair_locations (id, chair_id, latitude, longitude) VALUES (?, ?, ?, ?)`,
-		chairLocationID, chair.ID, req.Latitude, req.Longitude,
-	); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
+	location := &ChairLocation{}
+	if err := tx.GetContext(ctx, location, `SELECT * FROM chair_locations WHERE chair_id = ? ORDER BY created_at DESC LIMIT 1`, chair.ID); err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
 	}
 
-	location := &ChairLocation{}
-	if err := tx.GetContext(ctx, location, `SELECT * FROM chair_locations WHERE id = ?`, chairLocationID); err != nil {
+	chairLocationID := ulid.Make().String()
+	createdAt := time.Now()
+	if _, err := tx.ExecContext(
+		ctx,
+		`INSERT INTO chair_locations (id, chair_id, latitude, longitude, created_at) VALUES (?, ?, ?, ?, ?)`,
+		chairLocationID, chair.ID, req.Latitude, req.Longitude, createdAt,
+	); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -170,7 +173,7 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, &chairPostCoordinateResponse{
-		RecordedAt: location.CreatedAt.UnixMilli(),
+		RecordedAt: createdAt.UnixMilli(),
 	})
 }
 
@@ -260,7 +263,38 @@ func bulkInsertCoordinates(ctx context.Context, tx *sqlx.Tx, coordinates []*Coor
 		return nil
 	}
 
-	// INSERT 文テンプレート
+	type tmpLocation struct {
+		Latitude      int
+		Longitude     int
+		totalDistance int
+	}
+	tmpLocationsMap := make(map[string]tmpLocation)
+	for _, c := range coordinates {
+		v, ok := tmpLocationsMap[c.ChairID]
+		totalDistance := 0
+		if !ok {
+			// 今回の更新で最初の 1 件
+			chairLocation := &ChairLocation{}
+			if err := tx.GetContext(ctx, chairLocation, `SELECT * FROM chair_locations WHERE chair_id = ? ORDER BY created_at DESC LIMIT 1`, c.ChairID); err != nil {
+				if !errors.Is(err, sql.ErrNoRows) {
+					return err
+				}
+				// DB 上でも最初の 1 件だったとき
+			} else {
+				// DB にはデータがある場合
+				totalDistance = abs(c.Latitude-chairLocation.Latitude) + abs(c.Longitude-chairLocation.Longitude)
+			}
+		} else {
+			// 2 回目以降の更新
+			totalDistance = v.totalDistance + abs(c.Latitude-v.Latitude) + abs(c.Longitude-v.Longitude)
+		}
+		tmpLocationsMap[c.ChairID] = tmpLocation{
+			Latitude:      c.Latitude,
+			Longitude:     c.Longitude,
+			totalDistance: totalDistance,
+		}
+	}
+
 	query := `
         INSERT INTO chair_locations (id, chair_id, latitude, longitude, created_at)
         VALUES (:id, :chair_id, :latitude, :longitude, :created_at)`
@@ -268,6 +302,15 @@ func bulkInsertCoordinates(ctx context.Context, tx *sqlx.Tx, coordinates []*Coor
 	if _, err := tx.NamedExecContext(ctx, query, coordinates); err != nil {
 		log.Printf("Failed to insert location: %v", err)
 		return err
+	}
+
+	// コミット
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	for chairID, v := range tmpLocationsMap {
+		addTotalDistance(chairID, v.totalDistance)
 	}
 
 	log.Printf("Inserted %d coordinates.", len(coordinates))
@@ -312,12 +355,6 @@ func saveBufferedCoordinates(ctx context.Context) {
 	// 座標データをまとめて挿入
 	if err := bulkInsertCoordinates(ctx, tx, toSave); err != nil {
 		log.Printf("Failed to bulk insert coordinates: %v", err)
-		return
-	}
-
-	// コミット
-	if err := tx.Commit(); err != nil {
-		log.Printf("Failed to commit transaction: %v", err)
 		return
 	}
 
