@@ -433,7 +433,6 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 
 	req := &postChairRidesRideIDStatusRequest{}
 
-	log.Println("chairPostRideStatus:来たよ")
 	if err := bindJSON(r, req); err != nil {
 		log.Println("Failed to bind json")
 		log.Println(err)
@@ -441,7 +440,6 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Println("chairPostRideStatus：バインド成功")
 	tx, err := db.Beginx()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -472,6 +470,7 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		tmpStatus = "ENROUTE"
+		updateRideStatusCache(ride.ID, tmpStatus)
 
 	// After Picking up user
 	case "CARRYING":
@@ -489,6 +488,7 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		tmpStatus = "CARRYING"
+		updateRideStatusCache(ride.ID, tmpStatus)
 
 	default:
 		writeError(w, http.StatusBadRequest, errors.New("invalid status"))
@@ -497,9 +497,6 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 	if err := tx.Commit(); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
-	}
-	if tmpStatus != "" {
-		updateRideStatusCache(ride.ID, tmpStatus)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
