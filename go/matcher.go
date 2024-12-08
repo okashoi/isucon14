@@ -22,7 +22,7 @@ func matchingOne() error {
 
 	// MEMO: 一旦最も待たせているリクエストに適当な空いている椅子マッチさせる実装とする。おそらくもっといい方法があるはず…
 	ride := &Ride{}
-	if err := db.Get(ride, `SELECT * FROM rides WHERE chair_id IS NULL ORDER BY created_at LIMIT 1`); err != nil {
+	if err := db.Get(ride, `SELECT * FROM rides WHERE chair_id IS NULL ORDER BY ABS(pickup_latitude - destination_latitude) + ABS(pickup_longitude - destination_longitude) DESC LIMIT 1`); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
