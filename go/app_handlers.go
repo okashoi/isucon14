@@ -323,12 +323,48 @@ func getLatestRideStatus(ctx context.Context, tx executableGet, rideID string) (
 	return status, nil
 }
 
+// 最新の Ride ステータスを取得する
 func getLatestRideStatuses(ctx context.Context, tx *sqlx.Tx, rideIDs []string) (map[string]string, error) {
+	rideStatusCacheLock.Lock()
+	defer rideStatusCacheLock.Unlock()
 	// rideIDs が空の場合の早期リターン
 	if len(rideIDs) == 0 {
 		return make(map[string]string), nil
 	}
 
+	// キャッシュから取得
+	statuses := make(map[string]string)
+	missingRideIDs := []string{}
+
+	for _, rideID := range rideIDs {
+		if status, found := rideStatusCache[rideID]; found {
+			// キャッシュに存在する場合
+			statuses[rideID] = status
+		} else {
+			// キャッシュに存在しない場合
+			missingRideIDs = append(missingRideIDs, rideID)
+		}
+	}
+
+	// キャッシュにない rideID をデータベースから取得
+	if len(missingRideIDs) > 0 {
+		dbStatuses, err := fetchRideStatusesFromDB(ctx, tx, missingRideIDs)
+		if err != nil {
+			return nil, err
+		}
+
+		// 結果をキャッシュに保存
+		for rideID, status := range dbStatuses {
+			rideStatusCache[rideID] = status
+			statuses[rideID] = status
+		}
+	}
+
+	return statuses, nil
+}
+
+// データベースから Ride ステータスを取得
+func fetchRideStatusesFromDB(ctx context.Context, tx *sqlx.Tx, rideIDs []string) (map[string]string, error) {
 	query := `
         SELECT ride_id, status
         FROM (
@@ -366,7 +402,6 @@ func getLatestRideStatuses(ctx context.Context, tx *sqlx.Tx, rideIDs []string) (
 
 	return statuses, nil
 }
-
 func appPostRides(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	req := &appPostRidesRequest{}

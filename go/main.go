@@ -152,6 +152,8 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	rideStatusCache = make(map[string]string)
+
 	writeJSON(w, http.StatusOK, postInitializeResponse{Language: "go"})
 }
 
