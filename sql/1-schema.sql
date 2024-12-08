@@ -143,7 +143,7 @@ CREATE TABLE coupons
 ALTER TABLE coupons ADD INDEX (used_by);
 
 DROP TABLE IF EXISTS chair_total_distances;
-CRATE TABLE chair_total_distances
+CREATE TABLE chair_total_distances
 (
   chair_id       VARCHAR(26) NOT NULL COMMENT '椅子ID',
   total_distance INTEGER     NOT NULL COMMENT '移動距離',
