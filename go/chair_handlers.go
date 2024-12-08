@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/jmoiron/sqlx"
+	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -188,6 +192,159 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, &chairPostCoordinateResponse{
 		RecordedAt: createdAt.UnixMilli(),
 	})
+}
+
+// グローバル変数
+var (
+	bufferLock    sync.Mutex
+	coordinateBuf []*CoordinateBF
+)
+
+// HTTPリクエストを処理
+func chairPostCoordinateBF(w http.ResponseWriter, r *http.Request) {
+	req := &Coordinate{}
+	ctx := r.Context()
+	if err := bindJSON(r, req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	chair := ctx.Value("chair").(*Chair)
+
+	tx, err := db.Beginx()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer tx.Rollback()
+
+	// 現在のタイムスタンプを生成
+	latestTimestamp := time.Now()
+
+	// バッファにデータを追加（タイムスタンプ込み）
+	bufferLock.Lock()
+	chairLocationID := ulid.Make().String()
+	coordinateBuf = append(coordinateBuf, &CoordinateBF{
+		ID:        chairLocationID,
+		ChairID:   chair.ID,
+		Latitude:  req.Latitude,
+		Longitude: req.Longitude,
+		CreatedAt: latestTimestamp, // ここで作成時刻を保持
+	})
+	bufferLock.Unlock()
+	ride := &Ride{}
+	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1`, chair.ID); err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+	} else {
+		status, err := getLatestRideStatus(ctx, tx, ride.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		if status != "COMPLETED" && status != "CANCELED" {
+			if req.Latitude == ride.PickupLatitude && req.Longitude == ride.PickupLongitude && status == "ENROUTE" {
+				if _, err := tx.ExecContext(ctx, "INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)", ulid.Make().String(), ride.ID, "PICKUP"); err != nil {
+					writeError(w, http.StatusInternalServerError, err)
+					return
+				}
+			}
+
+			if req.Latitude == ride.DestinationLatitude && req.Longitude == ride.DestinationLongitude && status == "CARRYING" {
+				if _, err := tx.ExecContext(ctx, "INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)", ulid.Make().String(), ride.ID, "ARRIVED"); err != nil {
+					writeError(w, http.StatusInternalServerError, err)
+					return
+				}
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// レスポンスを返す
+	writeJSON(w, http.StatusOK, &chairPostCoordinateResponse{
+		RecordedAt: latestTimestamp.UnixMilli(),
+	})
+}
+
+// 座標データをバルクインサート
+func bulkInsertCoordinates(ctx context.Context, tx *sqlx.Tx, coordinates []*CoordinateBF) error {
+	if len(coordinates) == 0 {
+		return nil
+	}
+
+	// INSERT 文テンプレート
+	query := `
+        INSERT INTO chair_locations (id, chair_id, latitude, longitude, created_at)
+        VALUES (:id, :chair_id, :latitude, :longitude, :created_at)`
+
+	// 各 CoordinateBF を NamedExec 用のマップに変換
+	for _, coord := range coordinates {
+		if _, err := tx.NamedExecContext(ctx, query, coord); err != nil {
+			log.Printf("Failed to insert location: %v", err)
+			return err
+		}
+	}
+
+	log.Printf("Inserted %d coordinates.", len(coordinates))
+	return nil
+}
+
+// 定期的にバッファ内のデータを処理
+func startBufferProcessor() {
+	ctx := context.Background()
+	t := time.NewTicker(50 * time.Millisecond)
+	for {
+		select {
+		case <-t.C:
+			saveBufferedCoordinates(ctx)
+		}
+	}
+}
+
+// バッファ内のデータを保存し、関連する rides を処理
+func saveBufferedCoordinates(ctx context.Context) {
+	bufferLock.Lock()
+	defer bufferLock.Unlock()
+
+	if len(coordinateBuf) == 0 {
+		return
+	}
+
+	// バッファの内容をコピーしてクリア
+	toSave := coordinateBuf
+	coordinateBuf = nil
+
+	// トランザクションを開始
+	tx, err := db.Beginx()
+	if err != nil {
+		log.Printf("Failed to begin transaction: %v", err)
+		return
+	}
+	defer func() {
+		if err := tx.Rollback(); err != nil && err != sql.ErrTxDone {
+			log.Printf("Failed to rollback transaction: %v", err)
+		}
+	}()
+
+	// 座標データをまとめて挿入
+	if err := bulkInsertCoordinates(ctx, tx, toSave); err != nil {
+		log.Printf("Failed to bulk insert coordinates: %v", err)
+		return
+	}
+
+	// コミット
+	if err := tx.Commit(); err != nil {
+		log.Printf("Failed to commit transaction: %v", err)
+		return
+	}
+
+	log.Printf("Saved %d coordinates with ride status updates.", len(toSave))
 }
 
 type simpleUser struct {

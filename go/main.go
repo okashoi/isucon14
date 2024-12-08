@@ -4,16 +4,16 @@ import (
 	crand "crypto/rand"
 	"encoding/json"
 	"fmt"
+	"github.com/felixge/fgprof"
 	"log"
 	"log/slog"
 	"net"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/exec"
 	"strconv"
-
-	"github.com/felixge/fgprof"
-	_ "net/http/pprof"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -113,7 +113,7 @@ func setup() http.Handler {
 
 		authedMux := mux.With(chairAuthMiddleware)
 		authedMux.HandleFunc("POST /api/chair/activity", chairPostActivity)
-		authedMux.HandleFunc("POST /api/chair/coordinate", chairPostCoordinate)
+		authedMux.HandleFunc("POST /api/chair/coordinate", chairPostCoordinateBF)
 		authedMux.HandleFunc("GET /api/chair/notification", chairGetNotification)
 		authedMux.HandleFunc("POST /api/chair/rides/{ride_id}/status", chairPostRideStatus)
 	}
@@ -123,8 +123,8 @@ func setup() http.Handler {
 		mux.HandleFunc("GET /api/internal/matching", internalGetMatching)
 	}
 
+	go startBufferProcessor()
 	go matchingAuto()
-
 	return mux
 }
 
@@ -192,6 +192,14 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 type Coordinate struct {
 	Latitude  int `json:"latitude"`
 	Longitude int `json:"longitude"`
+}
+
+type CoordinateBF struct {
+	ID        string    `db:"id"`
+	ChairID   string    `db:"chair_id"`
+	Latitude  int       `db:"latitude"`
+	Longitude int       `db:"longitude"`
+	CreatedAt time.Time `db:"created_at"`
 }
 
 func bindJSON(r *http.Request, v interface{}) error {
