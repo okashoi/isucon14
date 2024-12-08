@@ -179,7 +179,6 @@ var (
 
 // HTTPリクエストを処理
 func chairPostCoordinateBF(w http.ResponseWriter, r *http.Request) {
-	time.Sleep(100 * time.Millisecond) // 100ms待つ
 	req := &Coordinate{}
 	if err := bindJSON(r, req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -229,11 +228,19 @@ func bulkInsertCoordinates(ctx context.Context, tx *sqlx.Tx, coordinates []*Coor
 // 定期的にバッファ内のデータを処理
 func startBufferProcessor() {
 	ctx := context.Background()
-	//ticker := time.NewTicker(100 * time.Millisecond)
-	//defer ticker.Stop()
-	log.Println("Starting buffer processor.")
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	log.Println("Buffer processor stopped.")
 	for {
-		saveBufferedCoordinates(ctx)
+		select {
+		case <-ctx.Done():
+			log.Println("保存:待機完了")
+			return
+		case <-ticker.C:
+			log.Println("保存:開始")
+			saveBufferedCoordinates(ctx)
+			log.Println("保存:終了")
+		}
 	}
 }
 
