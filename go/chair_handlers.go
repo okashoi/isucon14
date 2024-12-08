@@ -176,9 +176,8 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 
 // グローバル変数
 var (
-	bufferLock      sync.Mutex
+	bufferLock    sync.Mutex
 	CoordinateBuf []*CoordinateBF
-	tmpLocationsMap sync.Map
 )
 
 // HTTPリクエストを処理
@@ -260,14 +259,14 @@ func bulkInsertCoordinates(ctx context.Context, tx *sqlx.Tx, coordinates []*Coor
 	}
 
 	type tmpLocation struct {
-		Latitude  int
-		Longitude int
+		Latitude      int
+		Longitude     int
+		totalDistance int
 	}
-
-	tmpLocationsMap = sync.Map{}
+	tmpLocationsMap := make(map[string]tmpLocation)
 	for _, c := range coordinates {
-		v, ok := tmpLocationsMap.Load(c.ChairID)
-
+		v, ok := tmpLocationsMap[c.ChairID]
+		totalDistance := 0
 		if !ok {
 			// 今回の更新で最初の 1 件
 			chairLocation := &ChairLocation{}
@@ -278,17 +277,17 @@ func bulkInsertCoordinates(ctx context.Context, tx *sqlx.Tx, coordinates []*Coor
 				// DB 上でも最初の 1 件だったとき
 			} else {
 				// DB にはデータがある場合
-				addTotalDistance(c.ChairID, abs(c.Latitude-chairLocation.Latitude)+abs(c.Longitude-chairLocation.Longitude))
+				totalDistance = abs(c.Latitude-chairLocation.Latitude) + abs(c.Longitude-chairLocation.Longitude)
 			}
 		} else {
 			// 2 回目以降の更新
-			tl := v.(tmpLocation)
-			addTotalDistance(c.ChairID, abs(c.Latitude-tl.Latitude)+abs(c.Longitude-tl.Longitude))
+			totalDistance = v.totalDistance + abs(c.Latitude-v.Latitude) + abs(c.Longitude-v.Longitude)
 		}
-		tmpLocationsMap.Store(c.ChairID, tmpLocation{
-			Latitude:  c.Latitude,
-			Longitude: c.Longitude,
-		})
+		tmpLocationsMap[c.ChairID] = tmpLocation{
+			Latitude:      c.Latitude,
+			Longitude:     c.Longitude,
+			totalDistance: totalDistance,
+		}
 	}
 
 	query := `
@@ -298,6 +297,10 @@ func bulkInsertCoordinates(ctx context.Context, tx *sqlx.Tx, coordinates []*Coor
 	if _, err := tx.NamedExecContext(ctx, query, coordinates); err != nil {
 		log.Printf("Failed to insert location: %v", err)
 		return err
+	}
+
+	for chairID, v := range tmpLocationsMap {
+		addTotalDistance(chairID, v.totalDistance)
 	}
 
 	log.Printf("Inserted %d coordinates.", len(coordinates))
