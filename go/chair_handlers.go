@@ -230,6 +230,7 @@ func chairPostCoordinateBF(w http.ResponseWriter, r *http.Request) {
 					writeError(w, http.StatusInternalServerError, err)
 					return
 				}
+				updateRideStatusCache(ride.ID, "PICKUP")
 			}
 
 			if req.Latitude == ride.DestinationLatitude && req.Longitude == ride.DestinationLongitude && status == "CARRYING" {
@@ -237,6 +238,7 @@ func chairPostCoordinateBF(w http.ResponseWriter, r *http.Request) {
 					writeError(w, http.StatusInternalServerError, err)
 					return
 				}
+				updateRideStatusCache(ride.ID, "ARRIVED")
 			}
 		}
 	}
@@ -448,7 +450,6 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 	ride := &Ride{}
 	if err := tx.GetContext(ctx, ride, "SELECT * FROM rides WHERE id = ? FOR UPDATE", rideID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			log.Println("chairPostRideStatus ride not found")
 			writeError(w, http.StatusNotFound, errors.New("ride not found"))
 			return
 		}
@@ -457,7 +458,6 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if ride.ChairID.String != chair.ID {
-		log.Println("chairPostRideStatus not assigned to this ride")
 		writeError(w, http.StatusBadRequest, errors.New("not assigned to this ride"))
 		return
 	}
@@ -470,7 +470,6 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		tmpStatus = "ENROUTE"
-		updateRideStatusCache(ride.ID, tmpStatus)
 
 	// After Picking up user
 	case "CARRYING":
@@ -480,7 +479,6 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if status != "PICKUP" {
-			log.Println("chairPostRideStatus chair has not arrived yet")
 			writeError(w, http.StatusBadRequest, errors.New("chair has not arrived yet"))
 			return
 		}
@@ -489,16 +487,16 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		tmpStatus = "CARRYING"
-		updateRideStatusCache(ride.ID, tmpStatus)
-
 	default:
-		log.Println("chairPostRideStatus invalid status")
 		writeError(w, http.StatusBadRequest, errors.New("invalid status"))
 	}
 
 	if err := tx.Commit(); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
+	}
+	if tmpStatus != "" {
+		updateRideStatusCache(ride.ID, tmpStatus)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
