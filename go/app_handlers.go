@@ -211,9 +211,21 @@ func appGetRides(w http.ResponseWriter, r *http.Request) {
 	}
 
 	items := []getAppRidesResponseItem{}
+	// ここで全ridesのIDをまとめて取得
+	rideIDs := make([]string, 0, len(rides))
 	for _, ride := range rides {
-		status, err := getLatestRideStatus(ctx, tx, ride.ID)
-		if err != nil {
+		rideIDs = append(rideIDs, ride.ID)
+	}
+
+	// 複数のライドステータスをまとめて取得
+	statusMap, err := getLatestRideStatuses(ctx, tx, rideIDs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	for _, ride := range rides {
+		status, err1 := statusMap[ride.ID]
+		if !err1 {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -948,14 +960,21 @@ func appGetNearbyChairs(w http.ResponseWriter, r *http.Request) {
 		}
 
 		skip := false
+		// ここで全ridesのIDをまとめて取得
+		rideIDs := make([]string, 0, len(rides))
 		for _, ride := range rides {
-			// 過去にライドが存在し、かつ、それが完了していない場合はスキップ
-			status, err := getLatestRideStatus(ctx, tx, ride.ID)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, err)
-				return
-			}
-			if status != "COMPLETED" {
+			rideIDs = append(rideIDs, ride.ID)
+		}
+
+		// 複数のライドステータスをまとめて取得
+		statusMap, err := getLatestRideStatuses(ctx, tx, rideIDs)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		for _, ride := range rides {
+			if statusMap[ride.ID] != "COMPLETED" {
 				skip = true
 				break
 			}
