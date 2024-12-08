@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"time"
 )
 
 var erroredUpstream = errors.New("errored upstream")
@@ -42,6 +43,7 @@ func requestPaymentGatewayPostPayment(ctx context.Context, paymentGatewayURL str
 
 	log.Printf("payment gateway response: %d\n", res.StatusCode)
 	if res.StatusCode != http.StatusNoContent {
+		time.Sleep(50 * time.Millisecond)
 		return requestPaymentGatewayPostPayment(ctx, paymentGatewayURL, token, param, retrieveRidesOrderByCreatedAtAsc)
 	}
 
