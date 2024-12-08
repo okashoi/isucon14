@@ -195,11 +195,6 @@ func chairPostCoordinateBF(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	if err := bindJSON(r, req); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
 	// 現在のタイムスタンプを生成
 	latestTimestamp := time.Now()
 
@@ -259,7 +254,7 @@ func bulkInsertCoordinates(ctx context.Context, tx *sqlx.Tx, coordinates []*Coor
 	if len(coordinates) == 0 {
 		return nil
 	}
-	
+
 	// INSERT 文テンプレート
 	query := `
         INSERT INTO chair_locations (id, chair_id, latitude, longitude, created_at)
