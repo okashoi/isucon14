@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"errors"
+	"log"
 	"time"
 )
 
@@ -17,6 +18,11 @@ func matchingAuto() {
 }
 
 func matchingOne() error {
+	t := time.Now()
+	defer func() {
+		log.Printf("matchingOne() done (%s ms)\n", time.Since(t).Milliseconds())
+	}()
+
 	// MEMO: 一旦最も待たせているリクエストに適当な空いている椅子マッチさせる実装とする。おそらくもっといい方法があるはず…
 	ride := &Ride{}
 	if err := db.Get(ride, `SELECT * FROM rides WHERE chair_id IS NULL ORDER BY created_at LIMIT 1`); err != nil {
