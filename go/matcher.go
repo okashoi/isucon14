@@ -32,7 +32,7 @@ func matchingOne() error {
 	}
 
 	var matchedChairId string
-	if err := db.Get(&matchedChairId, "SELECT id FROM chairs WHERE is_active = 1 AND id NOT IN (SELECT chair_id FROM incompleted_chairs) LIMIT 1", ride.PickupLatitude, ride.PickupLongitude); err != nil {
+	if err := db.Get(&matchedChairId, "SELECT id FROM chairs WHERE is_active = 1 AND id NOT IN (SELECT chair_id FROM incompleted_chairs) LIMIT 1"); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			log.Println("matchingOne() no chair found")
 			return nil
