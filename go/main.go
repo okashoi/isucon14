@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -22,8 +23,24 @@ import (
 )
 
 var (
-	db *sqlx.DB
+	db             *sqlx.DB
+	totalDistances sync.Map
 )
+
+func getTotalDistance(chairID string) int {
+	v, ok := totalDistances.Load(chairID)
+	if !ok {
+		return 0
+	}
+	return v.(int)
+}
+
+func addTotalDistance(chairID string, delta int) int {
+	updated := getTotalDistance(chairID) + delta
+	totalDistances.Store(chairID, updated)
+
+	return updated
+}
 
 func main() {
 	http.DefaultServeMux.Handle("/debug/fgprof", fgprof.Handler())
@@ -123,6 +140,7 @@ func setup() http.Handler {
 		mux.HandleFunc("GET /api/internal/matching", internalGetMatching)
 	}
 
+	totalDistances = sync.Map{}
 	go startBufferProcessor()
 	go matchingAuto()
 	return mux
@@ -161,9 +179,8 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type tmpChairLocation struct {
-		Latitude      int
-		Longitude     int
-		TotalDistance int
+		Latitude  int
+		Longitude int
 	}
 	var chairLocationMap = make(map[string]tmpChairLocation)
 	for _, cl := range chairLocations {
@@ -172,17 +189,10 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 			chairLocationMap[cl.ChairID] = tmpChairLocation{Latitude: cl.Latitude, Longitude: cl.Longitude}
 			continue
 		}
+		addTotalDistance(cl.ChairID, abs(cl.Latitude-tmpLocation.Latitude)+abs(cl.Longitude-tmpLocation.Longitude))
 		chairLocationMap[cl.ChairID] = tmpChairLocation{
-			Latitude:      cl.Latitude,
-			Longitude:     cl.Longitude,
-			TotalDistance: tmpLocation.TotalDistance + abs(cl.Latitude-tmpLocation.Latitude) + abs(cl.Longitude-tmpLocation.Longitude),
-		}
-	}
-
-	for chairID, cl := range chairLocationMap {
-		if _, err := db.ExecContext(ctx, "INSERT INTO chair_total_distances (`chair_id`, `total_distance`) VALUES (?, ?)", chairID, cl.TotalDistance); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
+			Latitude:  cl.Latitude,
+			Longitude: cl.Longitude,
 		}
 	}
 

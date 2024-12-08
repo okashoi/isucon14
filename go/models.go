@@ -85,8 +85,3 @@ type Coupon struct {
 	CreatedAt time.Time `db:"created_at"`
 	UsedBy    *string   `db:"used_by"`
 }
-
-type ChairTotalDistance struct {
-	ChairID       string `db:"chair_id"`
-	TotalDistance int    `db:"total_distance"`
-}
