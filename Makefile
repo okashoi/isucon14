@@ -5,6 +5,8 @@ gogo: stop-services build truncate-logs start-services
 stop-services:
 	sudo systemctl stop nginx
 	sudo systemctl stop isuride-go.service
+	sudo systemctl stop isuride-matcher.service
+	sudo systemctl stop isuride-payment_mock.service
 	sudo systemctl stop mysql
 
 build:
@@ -19,6 +21,8 @@ truncate-logs:
 
 start-services:
 	sudo systemctl start mysql
+	sudo systemctl start isuride-payment_mock.service
+	sudo systemctl start isuride-matcher.service
 	sudo systemctl start isuride-go.service
 	sudo systemctl start nginx
 
