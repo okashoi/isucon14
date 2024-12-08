@@ -299,6 +299,11 @@ func bulkInsertCoordinates(ctx context.Context, tx *sqlx.Tx, coordinates []*Coor
 		return err
 	}
 
+	// コミット
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
 	for chairID, v := range tmpLocationsMap {
 		addTotalDistance(chairID, v.totalDistance)
 	}
@@ -345,12 +350,6 @@ func saveBufferedCoordinates(ctx context.Context) {
 	// 座標データをまとめて挿入
 	if err := bulkInsertCoordinates(ctx, tx, toSave); err != nil {
 		log.Printf("Failed to bulk insert coordinates: %v", err)
-		return
-	}
-
-	// コミット
-	if err := tx.Commit(); err != nil {
-		log.Printf("Failed to commit transaction: %v", err)
 		return
 	}
 
