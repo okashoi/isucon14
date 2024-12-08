@@ -291,6 +291,50 @@ func getLatestRideStatus(ctx context.Context, tx executableGet, rideID string) (
 	return status, nil
 }
 
+func getLatestRideStatuses(ctx context.Context, tx *sqlx.Tx, rideIDs []string) (map[string]string, error) {
+	// rideIDs が空の場合の早期リターン
+	if len(rideIDs) == 0 {
+		return make(map[string]string), nil
+	}
+
+	query := `
+        SELECT ride_id, status
+        FROM (
+            SELECT ride_id, status, ROW_NUMBER() OVER (PARTITION BY ride_id ORDER BY created_at DESC) AS row_num
+            FROM ride_statuses
+            WHERE ride_id IN (?)
+        ) subquery
+        WHERE row_num = 1
+    `
+
+	// クエリのバインド
+	query, args, err := sqlx.In(query, rideIDs)
+	if err != nil {
+		return nil, err
+	}
+	query = tx.Rebind(query)
+
+	// クエリ結果を格納する構造体
+	type RideStatusRow struct {
+		RideID string `db:"ride_id"`
+		Status string `db:"status"`
+	}
+
+	// クエリ実行
+	var rows []RideStatusRow
+	if err := tx.SelectContext(ctx, &rows, query, args...); err != nil {
+		return nil, err
+	}
+
+	// 結果をマップに変換
+	statuses := make(map[string]string)
+	for _, row := range rows {
+		statuses[row.RideID] = row.Status
+	}
+
+	return statuses, nil
+}
+
 func appPostRides(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	req := &appPostRidesRequest{}
@@ -319,14 +363,23 @@ func appPostRides(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Ride IDs を一括取得
+	rideIDs := []string{}
+	for _, ride := range rides {
+		rideIDs = append(rideIDs, ride.ID)
+	}
+
+	// 最新のステータスを一括取得
+	statuses, err := getLatestRideStatuses(ctx, tx, rideIDs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// ステータスをチェック
 	continuingRideCount := 0
 	for _, ride := range rides {
-		status, err := getLatestRideStatus(ctx, tx, ride.ID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-		if status != "COMPLETED" {
+		if status, exists := statuses[ride.ID]; exists && status != "COMPLETED" {
 			continuingRideCount++
 		}
 	}
