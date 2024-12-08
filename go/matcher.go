@@ -12,7 +12,9 @@ func matchingAuto() {
 	for {
 		select {
 		case <-t.C:
-			_ = matchingOne()
+			if err := matchingOne(); err != nil {
+				log.Println("matchingAuto() failed", err)
+			}
 		}
 	}
 }
@@ -32,6 +34,7 @@ func matchingOne() error {
 	// マンハッタン距離が最も近い椅子
 	if err := db.Get(matchedChairId, "SELECT l.chair_id FROM latest_chair_locations AS l INNER JOIN chairs AS c ON l.chair_id = c.id WHERE c.is_active = 1 ORDER BY ABS(latest_latitude - ?) + ABS(latest_longitude - ?) LIMIT 1", ride.PickupLatitude, ride.PickupLongitude); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
+			log.Println("matchingOne() no chair found")
 			return nil
 		}
 		return err
