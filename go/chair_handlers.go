@@ -1,10 +1,16 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/jmoiron/sqlx"
+	"log"
 	"net/http"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/oklog/ulid/v2"
 )
@@ -164,6 +170,142 @@ func chairPostCoordinate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, &chairPostCoordinateResponse{
 		RecordedAt: location.CreatedAt.UnixMilli(),
 	})
+}
+
+// 挿入用のデータ型
+type CoordinateEntry struct {
+	ChairID   string
+	Latitude  int
+	Longitude int
+	CreatedAt time.Time
+}
+
+var (
+	coordBuffer   []*CoordinateEntry
+	coordBufferMu sync.Mutex
+)
+
+// ハンドラ側では即DBに書かずバッファに積む
+func chairPostCoordinateBF(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	req := &Coordinate{}
+	if err := bindJSON(r, req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	chair := ctx.Value("chair").(*Chair)
+
+	// ここでDBに即書き込むのではなくバッファへ追加
+	coordBufferMu.Lock()
+	coordBuffer = append(coordBuffer, &CoordinateEntry{
+		ChairID:   chair.ID,
+		Latitude:  req.Latitude,
+		Longitude: req.Longitude,
+		CreatedAt: time.Now(),
+	})
+	coordBufferMu.Unlock()
+	tx, err := db.Beginx()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer tx.Rollback()
+	ride := &Ride{}
+	if err := tx.GetContext(ctx, ride, `SELECT * FROM rides WHERE chair_id = ? ORDER BY updated_at DESC LIMIT 1`, chair.ID); err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+	} else {
+		status, err := getLatestRideStatus(ctx, tx, ride.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		if status != "COMPLETED" && status != "CANCELED" {
+			if req.Latitude == ride.PickupLatitude && req.Longitude == ride.PickupLongitude && status == "ENROUTE" {
+				if _, err := tx.ExecContext(ctx, "INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)", ulid.Make().String(), ride.ID, "PICKUP"); err != nil {
+					writeError(w, http.StatusInternalServerError, err)
+					return
+				}
+			}
+
+			if req.Latitude == ride.DestinationLatitude && req.Longitude == ride.DestinationLongitude && status == "CARRYING" {
+				if _, err := tx.ExecContext(ctx, "INSERT INTO ride_statuses (id, ride_id, status) VALUES (?, ?, ?)", ulid.Make().String(), ride.ID, "ARRIVED"); err != nil {
+					writeError(w, http.StatusInternalServerError, err)
+					return
+				}
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, &chairPostCoordinateResponse{
+		RecordedAt: time.Now().UnixMilli(),
+	})
+}
+
+func flushCoordinatesAuto() {
+	// Context の初期化（キャンセル可能なコンテキスト）
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// ゴルーチンで処理を実行
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				flushCoordinates(ctx, db)
+			case <-ctx.Done():
+				log.Println("Stopping flushCoordinatesAuto...")
+				return
+			}
+		}
+	}()
+}
+
+func flushCoordinates(ctx context.Context, db *sqlx.DB) {
+	coordBufferMu.Lock()
+	entries := coordBuffer
+	coordBuffer = nil
+	coordBufferMu.Unlock()
+
+	if len(entries) == 0 {
+		return
+	}
+
+	// バルクインサート用のクエリ・パラメータ組み立て
+	var (
+		queryParts []string
+		args       []interface{}
+	)
+
+	// SQL: INSERT INTO chair_locations (id, chair_id, latitude, longitude, created_at) VALUES (?, ?, ?, ?, ?), (?, ?, ?, ?, ?), ...
+	baseQuery := "INSERT INTO chair_locations (id, chair_id, latitude, longitude, created_at) VALUES "
+	for i, e := range entries {
+		if i > 0 {
+			queryParts = append(queryParts, ",")
+		}
+		queryParts = append(queryParts, "(?, ?, ?, ?, ?)")
+		args = append(args, ulid.Make().String(), e.ChairID, e.Latitude, e.Longitude, e.CreatedAt)
+	}
+
+	fullQuery := baseQuery + strings.Join(queryParts, " ")
+
+	// sqlxを用いてバルクインサート実行
+	if _, err := db.ExecContext(ctx, fullQuery, args...); err != nil {
+		// エラー処理は適宜実装
+		log.Printf("failed to bulk insert: %v", err)
+		return
+	}
 }
 
 type simpleUser struct {

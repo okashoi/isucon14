@@ -122,7 +122,7 @@ func setup() http.Handler {
 	}
 
 	go matchingAuto()
-
+	go flushCoordinatesAuto()
 	return mux
 }
 
