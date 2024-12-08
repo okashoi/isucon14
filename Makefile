@@ -7,7 +7,7 @@ stop-services:
 	sudo systemctl stop isuride-go.service
 	sudo systemctl stop isuride-matcher.service
 	sudo systemctl stop isuride-payment_mock.service
-	sudo systemctl stop mysql
+	ssh isucon-s3 "sudo systemctl stop mysql"
 
 build:
 	cd go && go build -o isuride
@@ -16,11 +16,11 @@ truncate-logs:
 	sudo journalctl --vacuum-size=1K
 	sudo truncate --size 0 /var/log/nginx/access.log
 	sudo truncate --size 0 /var/log/nginx/error.log
-	sudo truncate --size 0 /var/log/mysql/mysql-slow.log && sudo chmod 666 /var/log/mysql/mysql-slow.log
-	sudo truncate --size 0 /var/log/mysql/error.log
+	ssh isucon-s3 "sudo truncate --size 0 /var/log/mysql/mysql-slow.log && sudo chmod 666 /var/log/mysql/mysql-slow.log"
+	ssh isucon-s3 "sudo truncate --size 0 /var/log/mysql/error.log"
 
 start-services:
-	sudo systemctl start mysql
+	ssh isucon-s3 "sudo systemctl start mysql"
 	sudo systemctl start isuride-payment_mock.service
 	sudo systemctl start isuride-matcher.service
 	sudo systemctl start isuride-go.service
