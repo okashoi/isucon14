@@ -42,7 +42,7 @@ func requestPaymentGatewayPostPayment(ctx context.Context, paymentGatewayURL str
 	defer res.Body.Close()
 
 	log.Printf("payment gateway response: %d\n", res.StatusCode)
-	if res.StatusCode != http.StatusBadGateway {
+	if res.StatusCode == http.StatusBadGateway {
 		time.Sleep(50 * time.Millisecond)
 		return requestPaymentGatewayPostPayment(ctx, paymentGatewayURL, token, param, retrieveRidesOrderByCreatedAtAsc)
 	}
