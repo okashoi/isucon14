@@ -59,6 +59,9 @@ func setup() http.Handler {
 	dbConfig.DBName = dbname
 	dbConfig.ParseTime = true
 
+	db.SetMaxOpenConns(100)
+	db.SetMaxIdleConns(100)
+
 	_db, err := sqlx.Connect("mysql", dbConfig.FormatDSN())
 	if err != nil {
 		panic(err)
