@@ -108,7 +108,7 @@ CREATE TABLE ride_statuses
   PRIMARY KEY (id)
 )
   COMMENT = 'ライドステータスの変更履歴テーブル';
-ALTER TABLE ride_statuses ADD INDEX (01JEHXD1A9DX67EHT04T3E76JN, created_at DESC);
+ALTER TABLE ride_statuses ADD INDEX (ride_id, created_at DESC);
 
 DROP TABLE IF EXISTS owners;
 CREATE TABLE owners
