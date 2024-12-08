@@ -432,6 +432,8 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 	chair := ctx.Value("chair").(*Chair)
 
 	req := &postChairRidesRideIDStatusRequest{}
+
+	log.Println("chairPostRideStatus:来たよ")
 	if err := bindJSON(r, req); err != nil {
 		log.Println("Failed to bind json")
 		log.Println(err)
@@ -439,6 +441,7 @@ func chairPostRideStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Println("chairPostRideStatus：バインド成功")
 	tx, err := db.Beginx()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
