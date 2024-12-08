@@ -228,17 +228,11 @@ func bulkInsertCoordinates(ctx context.Context, tx *sqlx.Tx, coordinates []*Coor
 // 定期的にバッファ内のデータを処理
 func startBufferProcessor() {
 	ctx := context.Background()
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
+	//ticker := time.NewTicker(100 * time.Millisecond)
+	//defer ticker.Stop()
 	log.Println("Starting buffer processor.")
 	for {
-		select {
-		case <-ctx.Done():
-			log.Println("Buffer processor stopped.")
-			return
-		case <-ticker.C:
-			saveBufferedCoordinates(ctx)
-		}
+		saveBufferedCoordinates(ctx)
 	}
 }
 
