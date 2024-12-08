@@ -30,6 +30,8 @@ CREATE TABLE chairs
   model        TEXT         NOT NULL COMMENT '椅子のモデル',
   is_active    TINYINT(1)   NOT NULL COMMENT '配椅子受付中かどうか',
   access_token VARCHAR(255) NOT NULL COMMENT 'アクセストークン',
+  latest_latitude   INTEGER     NOT NULL DEFAULT 0 COMMENT '最新の経度',
+  latest_longitude  INTEGER     NOT NULL DEFAULT 0 COMMENT '最新の緯度',
   created_at   DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '登録日時',
   updated_at   DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '更新日時',
   PRIMARY KEY (id)
@@ -37,7 +39,7 @@ CREATE TABLE chairs
   COMMENT = '椅子情報テーブル';
 ALTER TABLE chairs ADD INDEX (access_token);
 ALTER TABLE chairs ADD INDEX (owner_id);
-ALTER TABLE chairs ADD INDEX (is_active);
+ALTER TABLE chairs ADD INDEX (is_active, latest_latitude, latest_longitude);
 
 DROP TABLE IF EXISTS chair_locations;
 CREATE TABLE chair_locations
@@ -51,6 +53,10 @@ CREATE TABLE chair_locations
 )
   COMMENT = '椅子の現在位置情報テーブル';
 ALTER TABLE chair_locations ADD INDEX (chair_id, created_at DESC);
+CREATE TRIGGER update_chairs_latest_position
+    AFTER INSERT ON chair_locations
+    FOR EACH ROW
+    UPDATE chairs SET latest_latitude = NEW.latitude, latest_longitude = NEW.longitude WHERE id = NEW.chair_id;
 
 DROP TABLE IF EXISTS users;
 CREATE TABLE users
@@ -142,24 +148,3 @@ CREATE TABLE coupons
 )
   COMMENT 'クーポンテーブル';
 ALTER TABLE coupons ADD INDEX (used_by);
-
-
-DROP VIEW IF EXISTS active_chair_locations;
-CREATE VIEW active_chair_locations AS
-SELECT id,
-       chair_id,
-       latitude,
-       longitude,
-       created_at
-FROM (
-         SELECT l.id,
-                l.chair_id,
-                l.latitude,
-                l.longitude,
-                l.created_at,
-                ROW_NUMBER() OVER (PARTITION BY l.chair_id ORDER BY l.created_at DESC) AS rn
-         FROM chair_locations AS l
-         INNER JOIN chairs AS c ON l.chair_id = c.id
-         WHERE c.is_active = 1
-     ) t
-WHERE rn = 1;
