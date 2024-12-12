@@ -8,7 +8,7 @@ import (
 )
 
 func matchingAuto() {
-	t := time.NewTicker(100 * time.Millisecond)
+	t := time.NewTicker(30 * time.Millisecond)
 	for {
 		select {
 		case <-t.C:
