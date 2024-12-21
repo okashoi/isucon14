@@ -195,30 +195,29 @@ func ownerGetChairs(w http.ResponseWriter, r *http.Request) {
 	owner := ctx.Value("owner").(*Owner)
 
 	chairs := []chairWithDetail{}
-	if err := db.SelectContext(ctx, &chairs, `SELECT id,
-       owner_id,
-       name,
-       access_token,
-       model,
-       is_active,
-       created_at,
-       updated_at,
-       IFNULL(total_distance, 0) AS total_distance,
-       total_distance_updated_at
-FROM chairs
-       LEFT JOIN (SELECT chair_id,
-                          SUM(IFNULL(distance, 0)) AS total_distance,
-                          MAX(created_at)          AS total_distance_updated_at
-                   FROM (SELECT chair_id,
-                                created_at,
-                                ABS(latitude - LAG(latitude) OVER (PARTITION BY chair_id ORDER BY created_at)) +
-                                ABS(longitude - LAG(longitude) OVER (PARTITION BY chair_id ORDER BY created_at)) AS distance
-                         FROM chair_locations
-                         WHERE chair_id IN (SELECT id FROM chairs WHERE owner_id = ?)
-                         ) tmp
-                   GROUP BY chair_id) distance_table ON distance_table.chair_id = chairs.id
+	if err := db.SelectContext(ctx, &chairs, `
+SELECT
+    id,
+    owner_id,
+    name,
+    access_token,
+    model,
+    is_active,
+    created_at,
+    updated_at,
+    total_distance_updated_at
+FROM
+    chairs
+    LEFT JOIN (
+        SELECT
+            chair_id,
+            MAX(created_at) AS total_distance_updated_at
+        FROM chair_locations
+            GROUP BY chair_id
+	) distance_table
+        ON distance_table.chair_id = chairs.id
 WHERE owner_id = ?
-`, owner.ID, owner.ID); err != nil {
+`, owner.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -231,7 +230,7 @@ WHERE owner_id = ?
 			Model:         chair.Model,
 			Active:        chair.IsActive,
 			RegisteredAt:  chair.CreatedAt.UnixMilli(),
-			TotalDistance: chair.TotalDistance,
+			TotalDistance: getTotalDistance(chair.ID),
 		}
 		if chair.TotalDistanceUpdatedAt.Valid {
 			t := chair.TotalDistanceUpdatedAt.Time.UnixMilli()

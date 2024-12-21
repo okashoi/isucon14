@@ -22,7 +22,25 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-var db *sqlx.DB
+var (
+	db             *sqlx.DB
+	totalDistances sync.Map
+)
+
+func getTotalDistance(chairID string) int {
+	v, ok := totalDistances.Load(chairID)
+	if !ok {
+		return 0
+	}
+	return v.(int)
+}
+
+func addTotalDistance(chairID string, delta int) int {
+	updated := getTotalDistance(chairID) + delta
+	totalDistances.Store(chairID, updated)
+
+	return updated
+}
 
 func main() {
 	http.DefaultServeMux.Handle("/debug/fgprof", fgprof.Handler())
@@ -122,6 +140,7 @@ func setup() http.Handler {
 		mux.HandleFunc("GET /api/internal/matching", internalGetMatching)
 	}
 
+	totalDistances = sync.Map{}
 	go startBufferProcessor()
 	go matchingAuto()
 	return mux
@@ -152,9 +171,35 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+
+	var chairLocations []ChairLocation
+	if err := db.SelectContext(ctx, &chairLocations, "SELECT id, chair_id, latitude, longitude FROM chair_locations ORDER BY created_at ASC"); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	type tmpChairLocation struct {
+		Latitude  int
+		Longitude int
+	}
+	var chairLocationMap = make(map[string]tmpChairLocation)
+	for _, cl := range chairLocations {
+		tmpLocation, ok := chairLocationMap[cl.ChairID]
+		if !ok {
+			chairLocationMap[cl.ChairID] = tmpChairLocation{Latitude: cl.Latitude, Longitude: cl.Longitude}
+			continue
+		}
+		addTotalDistance(cl.ChairID, abs(cl.Latitude-tmpLocation.Latitude)+abs(cl.Longitude-tmpLocation.Longitude))
+		chairLocationMap[cl.ChairID] = tmpChairLocation{
+			Latitude:  cl.Latitude,
+			Longitude: cl.Longitude,
+		}
+	}
+
 	rideStatusCache = make(map[string]string)
 	CoordinateBuf = []*CoordinateBF{}
 	AccessTokenCache = sync.Map{}
+
 	writeJSON(w, http.StatusOK, postInitializeResponse{Language: "go"})
 }
 
